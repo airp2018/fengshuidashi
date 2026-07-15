@@ -1,0 +1,1254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>风水大师 · AI 空间设计顾问</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{font-family:'PingFang SC','Microsoft YaHei',sans-serif;background:#1a0a0a;color:#e8d5c0;overflow:hidden;height:100vh;width:100vw;position:fixed}
+.screen{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;transition:opacity .4s;padding:20px}
+.screen.active{display:flex}
+
+/* ===== 顶部栏 (齿轮设置) ===== */
+.header-bar {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-btn {
+  font-size: 22px;
+  background: transparent;
+  border: none;
+  color: #c9a86c;
+  cursor: pointer;
+  opacity: 0.8;
+  transition: transform 0.3s;
+}
+.settings-btn:active {
+  transform: rotate(90deg);
+}
+.model-dropdown-wrap {
+  display: none;
+  background: rgba(30, 12, 12, 0.95);
+  border: 1px solid #c9a86c;
+  border-radius: 8px;
+  padding: 10px;
+  position: absolute;
+  top: 35px;
+  right: 0;
+  width: 200px;
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.model-dropdown-wrap.active {
+  display: block;
+}
+.model-dropdown-wrap label {
+  font-size: 11px;
+  color: #a08060;
+  display: block;
+  margin-bottom: 4px;
+}
+.model-dropdown-wrap select {
+  width: 100%;
+  background: #1a0a0a;
+  color: #e8d5c0;
+  border: 1px solid rgba(201, 168, 108, 0.5);
+  border-radius: 4px;
+  padding: 5px;
+  font-size: 12px;
+  outline: none;
+}
+
+/* ===== 首页 ===== */
+#home{background:radial-gradient(ellipse at 50% 30%,#2d1212,#0d0505)}
+.logo{font-size:12px;letter-spacing:6px;color:#c9a86c;position:absolute;top:60px;opacity:.6}
+.title{font-size:32px;font-weight:700;color:#f0d6a8;letter-spacing:4px;margin-bottom:4px;text-shadow:0 0 30px rgba(201,168,108,.3)}
+.subtitle{font-size:13px;color:#a08060;letter-spacing:2px;margin-bottom:30px}
+
+/* 八卦镜 */
+.bagua{width:240px;height:240px;position:relative;margin:10px auto 20px}
+.bagua-outer{width:100%;height:100%;border-radius:50%;border:4px solid #c9a86c;position:relative;animation:rotate 20s linear infinite;box-shadow:0 0 50px rgba(201,168,108,.15),inset 0 0 30px rgba(201,168,108,.05)}
+.bagua-ring{position:absolute;inset:8px;border-radius:50%;border:1px solid rgba(201,168,108,.3)}
+.bagua-inner{position:absolute;inset:28px;border-radius:50%;border:2px solid #c9a86c;overflow:hidden}
+.taiji{width:100%;height:100%;position:relative;animation:rotate 10s linear infinite reverse}
+.taiji-half{position:absolute;width:50%;height:100%}
+.taiji-half.left{left:0;background:#f0d6a8;border-radius:100% 0 0 100% / 50% 0 0 50%}
+.taiji-half.right{right:0;background:#1a0a0a;border-radius:0 100% 100% 0 / 0 50% 50% 0}
+.taiji-dot{position:absolute;width:16%;height:16%;border-radius:50%}
+.taiji-dot.light{background:#f0d6a8;top:30%;right:23%}
+.taiji-dot.dark{background:#1a0a0a;top:54%;left:23%}
+
+/* 八卦符号 */
+.trigram{position:absolute;font-size:18px;color:#c9a86c;font-weight:700}
+@keyframes rotate{to{transform:rotate(360deg)}}
+
+.btn-capture{width:72px;height:72px;border-radius:50%;border:3px solid #c9a86c;background:radial-gradient(circle,#3d2018,#1a0a0a);color:#f0d6a8;font-size:28px;cursor:pointer;position:relative;transition:transform .2s,box-shadow .2s;box-shadow:0 0 30px rgba(201,168,108,.2);display:flex;align-items:center;justify-content:center;outline:none}
+.btn-capture:active{transform:scale(.92)}
+.btn-capture::after{content:'';position:absolute;inset:6px;border-radius:50%;border:1px solid rgba(201,168,108,.3)}
+.capture-wrap{position:relative;margin-top:20px}
+.hint{font-size:12px;color:#806040;margin-top:12px;letter-spacing:1px}
+
+/* ===== 相机 (回退覆盖层) ===== */
+#camera{background:#000;padding:0}
+#camera video{width:100%;height:100%;object-fit:cover;position:absolute}
+.cam-overlay{position:absolute;inset:0;pointer-events:none}
+.cam-frame{position:absolute;top:10%;left:8%;right:8%;bottom:18%;border:2px solid rgba(201,168,108,0.4);border-radius:8px;box-shadow:0 0 40px rgba(201,168,108,0.08) inset}
+.cam-corner{position:absolute;width:20px;height:20px;border-color:#c9a86c;border-style:solid}
+.cam-corner.tl{top:-1px;left:-1px;border-width:2px 0 0 2px}
+.cam-corner.tr{top:-1px;right:-1px;border-width:2px 2px 0 0}
+.cam-corner.bl{bottom:-1px;left:-1px;border-width:0 0 2px 2px}
+.cam-corner.br{bottom:-1px;right:-1px;border-width:0 2px 2px 0}
+.cam-bottom{position:absolute;bottom:40px;left:0;right:0;display:flex;justify-content:center;align-items:center;gap:40px;pointer-events:auto}
+.cam-btn{width:64px;height:64px;border-radius:50%;border:4px solid #fff;background:transparent;cursor:pointer}
+.cam-btn:active{background:rgba(255,255,255,.2)}
+.cam-back{color:#fff;font-size:24px;cursor:pointer;opacity:.7}
+.cam-snap{width:20px;height:20px;background:#fff;border-radius:50%;display:block;margin:18px auto 0}
+
+/* ===== 分析中 ===== */
+#analyzing{background:radial-gradient(ellipse at 50% 30%,#2d1212,#0d0505)}
+.analyze-bagua{width:100px;height:100px;border-radius:50%;border:3px solid #c9a86c;animation:rotate 1.5s linear infinite;margin-bottom:30px;display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:0 0 40px rgba(201,168,108,.2)}
+.analyze-text{font-size:16px;color:#d4b896;letter-spacing:2px}
+.analyze-dots{display:flex;gap:6px;margin-top:16px}
+.analyze-dots span{width:6px;height:6px;border-radius:50%;background:#c9a86c;animation:dotPulse 1.4s ease-in-out infinite}
+.analyze-dots span:nth-child(2){animation-delay:.2s}
+.analyze-dots span:nth-child(3){animation-delay:.4s}
+@keyframes dotPulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1.2)}}
+.analyze-step{font-size:12px;color:#806040;margin-top:20px;height:18px;text-align:center}
+
+/* ===== 场景确认 ===== */
+#sceneConfirm{background:radial-gradient(ellipse at 50% 30%,#2d1212,#0d0505)}
+#sceneConfirm .title{font-size:20px;margin-bottom:6px;text-align:center}
+#sceneConfirm .subtitle{font-size:14px;color:#a08060;margin-bottom:30px;text-align:center}
+.scene-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;width:100%;max-width:340px;margin-bottom:20px}
+.scene-btn{padding:18px 10px;border-radius:12px;border:1px solid rgba(201,168,108,.25);background:rgba(30,12,12,.7);color:#d4b896;font-size:14px;cursor:pointer;text-align:center;transition:all .2s;backdrop-filter:blur(4px)}
+.scene-btn:active{background:rgba(201,168,108,.15);border-color:#c9a86c;transform:scale(.96)}
+.scene-btn .icon{font-size:28px;display:block;margin-bottom:6px}
+
+/* ===== 问答 ===== */
+#qa{background:radial-gradient(ellipse at 50% 30%,#2d1212,#0d0505)}
+.qa-chat{width:100%;max-width:400px;flex:1;display:flex;flex-direction:column;gap:16px;overflow-y:auto;padding-bottom:20px}
+.qa-bubble{max-width:85%;padding:14px 18px;border-radius:16px;font-size:15px;line-height:1.6}
+.qa-bubble.ai{align-self:flex-start;background:rgba(40,18,12,.8);border:1px solid rgba(201,168,108,.2);border-bottom-left-radius:4px;color:#e0c8a8}
+.qa-bubble.user{align-self:flex-end;background:rgba(201,168,108,.12);border:1px solid rgba(201,168,108,.25);border-bottom-right-radius:4px;color:#f0d6a8}
+.qa-options{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px}
+.qa-opt{padding:10px 20px;border-radius:20px;border:1px solid rgba(201,168,108,0.3);background:rgba(30,12,12,.6);color:#d4b896;font-size:14px;cursor:pointer;transition:all .2s}
+.qa-opt:active{background:rgba(201,168,108,.15);border-color:#c9a86c;transform:scale(.95)}
+
+/* ===== 结果 ===== */
+#result{background:radial-gradient(ellipse at 50% 20%,#2d1210,#0d0505);overflow-y:auto;justify-content:flex-start}
+#result .title{font-size:22px;margin-top:20px;text-align:center}
+.result-score{display:flex;align-items:center;justify-content:center;gap:10px;margin:16px 0 20px}
+.score-ring{width:80px;height:80px;border-radius:50%;border:4px solid #c9a86c;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#f0d6a8;background:rgba(201,168,108,0.05)}
+.score-label{font-size:14px;color:#a08060}
+.result-cards{width:100%;max-width:400px;display:flex;flex-direction:column;gap:12px;padding-bottom:100px}
+.r-card{padding:14px 16px;border-radius:10px;font-size:14px;line-height:1.5;background:rgba(30,12,12,.6);border-left:3px solid;box-shadow: 0 4px 10px rgba(0,0,0,0.2)}
+.r-card.good{border-color:#5a9a6a}
+.r-card.bad{border-color:#b05850}
+.r-card.tip{border-color:#c9a86c}
+.r-card .label{font-weight:600;margin-bottom:6px;font-size:15px}
+.r-card.good .label{color:#7aba7a}
+.r-card.bad .label{color:#d07070}
+.r-card.tip .label{color:#e8c87a}
+.r-card ul{list-style:none;padding:0}
+.r-card li{padding:4px 0;padding-left:16px;position:relative}
+.r-card li::before{content:'';position:absolute;left:0;top:10px;width:5px;height:5px;border-radius:50%}
+.r-card.good li::before{background:#5a9a6a}
+.r-card.bad li::before{background:#b05850}
+.r-card.tip li::before{background:#c9a86c}
+.result-actions{position:fixed;bottom:0;left:0;right:0;display:flex;gap:12px;padding:16px 20px;background:linear-gradient(transparent,#0d0505 50%);justify-content:center;z-index: 10}
+.btn-again{padding:12px 28px;border-radius:25px;border:1px solid #c9a86c;background:transparent;color:#c9a86c;font-size:15px;cursor:pointer;letter-spacing:2px}
+.btn-share{padding:12px 28px;border-radius:25px;border:none;background:#c9a86c;color:#1a0a0a;font-size:15px;cursor:pointer;letter-spacing:2px;font-weight:600}
+
+.compass-hint {
+  font-size: 11px;
+  color: #806040;
+  margin-top: 8px;
+  background: rgba(201, 168, 108, 0.1);
+  padding: 4px 10px;
+  border-radius: 10px;
+}
+
+.footer{position:absolute;bottom:12px;font-size:10px;color:#403020;letter-spacing:1px}
+.pulse-camera {
+  animation: cameraPulse 2.5s infinite ease-in-out;
+}
+@keyframes cameraPulse {
+  0% { box-shadow: 0 4px 10px rgba(0,0,0,0.3), 0 0 0 0 rgba(201, 168, 108, 0.6); transform: scale(1); }
+  50% { box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 0 0 10px rgba(201, 168, 108, 0); transform: scale(1.08); }
+  100% { box-shadow: 0 4px 10px rgba(0,0,0,0.3), 0 0 0 0 rgba(201, 168, 108, 0); transform: scale(1); }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== 首页 ===== -->
+<div id="home" class="screen active" style="flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 40px; padding-bottom: 20px;">
+  <!-- 右上角相机按钮 -->
+  <button class="settings-btn pulse-camera" style="position: absolute; top: 20px; right: 20px; z-index: 100; font-size: 18px; background: rgba(30,12,12,0.8); border: 1px solid #c9a86c; border-radius: 50%; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; color: #c9a86c; cursor: pointer;" onclick="triggerPhotoCapture()">📷</button>
+  <input type="file" accept="image/*" capture="environment" id="cameraInput" style="display:none" onchange="handleFileInput(event)">
+
+  <div class="title" style="font-size: 38px; font-weight: 800; color: #f0d6a8; letter-spacing: 6px; margin-top: 10px; margin-bottom: 2px; text-shadow: 0 0 25px rgba(201, 168, 108, 0.35);">风水大师</div>
+  <div class="subtitle" style="font-size: 12px; color: #a08060; letter-spacing: 3px; margin-bottom: 20px; opacity: 0.8;">── AI 空间设计顾问 ──</div>
+
+  <!-- 罗盘向上，紧挨着标题 -->
+  <div class="bagua" id="luopanContainer" style="width: 250px; height: 250px; position: relative; margin: 0 auto 15px; overflow: hidden; border-radius: 50%; border: 4px solid #c9a86c; box-shadow: 0 0 40px rgba(201, 168, 108, 0.45); display: flex; align-items: center; justify-content: center;">
+    <!-- Luopan Dial disc image (scaled 1.15 to crop yellow corners) -->
+    <img src="luopan.png" id="luopanDial" style="width: 100%; height: 100%; transform: rotate(0deg) scale(1.15); transition: transform 0.1s ease-out; user-select: none; -webkit-user-drag: none; cursor: grab; z-index: 5;">
+    
+    <!-- 十字鱼丝 (Perpendicular thin red crosshair lines, fixed on outer frame) -->
+    <div style="position: absolute; width: 1px; height: 100%; background: rgba(220, 50, 50, 0.45); pointer-events: none; z-index: 7;"></div>
+    <div style="position: absolute; height: 1px; width: 100%; background: rgba(220, 50, 50, 0.45); pointer-events: none; z-index: 7;"></div>
+    
+    <!-- 中心天池 (Heavenly Pool) -->
+    <div style="position: absolute; width: 52px; height: 52px; border-radius: 50%; background: #150808; border: 2px solid #c9a86c; box-shadow: inset 0 0 8px rgba(201,168,108,0.5), 0 4px 10px rgba(0,0,0,0.8); pointer-events: none; z-index: 9; display: flex; align-items: center; justify-content: center;">
+      <!-- 天池海底红线 (Static reference North-South line) -->
+      <div style="position: absolute; width: 1px; height: 44px; background: rgba(220, 50, 50, 0.3);"></div>
+      <!-- Center pin -->
+      <div style="position: absolute; width: 6px; height: 6px; border-radius: 50%; background: #c9a86c; border: 1px solid #1a0a0a; z-index: 12;"></div>
+      <!-- Short magnetic needle inside the Heavenly Pool -->
+      <div id="luopanNeedle" style="position: absolute; width: 4px; height: 38px; background: linear-gradient(to bottom, #d02020 50%, #e8d5c0 50%); border-radius: 4px 4px 1px 1px; z-index: 11; box-shadow: 0 0 4px rgba(0,0,0,0.6);"></div>
+    </div>
+  </div>
+
+  <div class="compass-hint" id="compassText" style="font-size: 12px; color: #c9a86c; background: rgba(201, 168, 108, 0.1); padding: 5px 12px; border-radius: 12px; border: 1px solid rgba(201, 168, 108, 0.15); margin-bottom: 10px; pointer-events: auto;">🧭 拖拽罗盘可手动对齐方位</div>
+
+  <!-- 下方是打赏和结缘的位置 -->
+  <div style="margin-top: auto; margin-bottom: 10px; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; max-width: 320px; background: rgba(45, 18, 18, 0.4); border: 1px dashed rgba(201, 168, 108, 0.35); border-radius: 14px; padding: 12px; backdrop-filter: blur(5px); z-index: 20;">
+    <div style="font-size: 11px; color: #c9a86c; letter-spacing: 1px; font-weight: 600;">☯ 随喜赞助 (<span id="currentQuotaText">每日算力: 6次</span>)</div>
+    <div style="display: flex; gap: 6px; justify-content: center; width: 100%;">
+      <button onclick="openIntroModal()" style="background: transparent; border: 1px solid rgba(201, 168, 108, 0.35); color: #c9a86c; font-size: 11px; padding: 6px 12px; border-radius: 14px; cursor: pointer; font-weight: 500;">📖 介绍</button>
+      <button onclick="openDonateModal()" style="background: rgba(30,12,12,0.8); border: 1px solid rgba(201, 168, 108, 0.5); color: #c9a86c; font-size: 11px; padding: 6px 12px; border-radius: 14px; cursor: pointer; font-weight: 500;">🧧 随喜打赏</button>
+      <button onclick="openActivationModal()" style="background: #FFDD00; color: #000; font-size: 11px; padding: 6px 12px; border-radius: 14px; border: none; font-weight: bold; display: flex; align-items: center; gap: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); cursor: pointer;">🔑 兑换码</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 相机 (回退兼容层，保留但通常使用 input file) ===== -->
+<div id="camera" class="screen">
+  <video id="video" autoplay playsinline></video>
+  <div class="cam-overlay">
+    <div class="cam-frame">
+      <div class="cam-corner tl"></div>
+      <div class="cam-corner tr"></div>
+      <div class="cam-corner bl"></div>
+      <div class="cam-corner br"></div>
+    </div>
+    <div class="cam-bottom">
+      <span class="cam-back" onclick="stopCamera()">✕</span>
+      <button class="cam-btn" onclick="takePhoto()"><span class="cam-snap"></span></button>
+      <span style="width:24px"></span>
+    </div>
+  </div>
+  <canvas id="canvas" style="display:none"></canvas>
+</div>
+
+<!-- ===== 分析中 ===== -->
+<div id="analyzing" class="screen">
+  <div class="analyze-bagua">☯</div>
+  <div class="analyze-text">AI 正在深度审计风水格局</div>
+  <div class="analyze-dots"><span></span><span></span><span></span></div>
+  <div class="analyze-step" id="analyzeStep">上传并压缩图片...</div>
+</div>
+
+<!-- ===== 场景确认 ===== -->
+<div id="sceneConfirm" class="screen">
+  <div class="title">我判断这是一间</div>
+  <div class="subtitle">请确认空间类型，以获取精准风水规则</div>
+  <div class="scene-grid">
+    <div class="scene-btn" onclick="confirmScene('卧室')"><span class="icon">🛏️</span>卧室</div>
+    <div class="scene-btn" onclick="confirmScene('客厅')"><span class="icon">🛋️</span>客厅</div>
+    <div class="scene-btn" onclick="confirmScene('厨房')"><span class="icon">🍳</span>厨房</div>
+    <div class="scene-btn" onclick="confirmScene('书房')"><span class="icon">📚</span>书房</div>
+    <div class="scene-btn" onclick="confirmScene('办公室')"><span class="icon">💼</span>办公室</div>
+    <div class="scene-btn" onclick="confirmScene('商铺')"><span class="icon">🏪</span>商铺</div>
+    <div class="scene-btn" onclick="confirmScene('餐厅')"><span class="icon">🍽️</span>餐厅</div>
+    <div class="scene-btn" onclick="confirmScene('卫浴')"><span class="icon">🚿</span>卫浴</div>
+  </div>
+</div>
+
+<!-- ===== 问答 ===== -->
+<div id="qa" class="screen">
+  <div class="qa-chat" id="qaChat"></div>
+  <div class="qa-actions" style="width: 100%; max-width: 400px; display: flex; justify-content: center; padding: 10px 0; margin-top: auto; z-index: 10;">
+    <button class="btn-again" style="font-size: 13px; padding: 8px 20px; border-radius: 18px; border-color: rgba(201, 168, 108, 0.4); color: #c9a86c;" onclick="skipQAAndAnalyze()">跳过提问，直接分析</button>
+  </div>
+</div>
+
+<!-- ===== 结果 ===== -->
+<div id="result" class="screen">
+  <div class="title" id="resultTitle">🏡 空间风水分析报告</div>
+  <div class="result-score">
+    <div class="score-ring" id="scoreRing">--</div>
+    <div class="score-label">分<br><span style="font-size:11px;color:#806040">综合评分</span></div>
+  </div>
+
+
+  <div class="result-cards" id="resultCards"></div>
+  <div class="result-actions" style="display: flex; gap: 8px; justify-content: center; width: 100%; flex-wrap: wrap;">
+    <button class="btn-again" style="padding: 10px 16px; font-size: 13px; flex: 1; min-width: 100px;" onclick="goHome()">重新拍照</button>
+    <button class="btn-share" style="padding: 10px 16px; font-size: 13px; flex: 1; min-width: 100px;" onclick="shareResult()">复制建议</button>
+    <button class="btn-again" style="padding: 10px 16px; font-size: 13px; flex: 1; min-width: 100px; border-color: #FFDD00; color: #FFDD00; background: rgba(255,221,0,0.05); cursor: pointer;" onclick="openDonateModal()">🧧 随喜打赏</button>
+  </div>
+</div>
+
+<!-- ===== 功德箱/打赏弹窗 ===== -->
+<div id="donateModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);">
+  <div style="background: #251212; border: 1px solid #c9a86c; border-radius: 16px; width: 100%; max-width: 380px; padding: 24px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 14px;">
+    <span style="position: absolute; top: 12px; right: 16px; font-size: 20px; color: #a08060; cursor: pointer;" onclick="closeDonateModal()">✕</span>
+    <h3 style="font-size: 18px; color: #f0d6a8; letter-spacing: 2px;">🧧 随喜打赏</h3>
+    <p style="font-size: 12px; color: #a08060; line-height: 1.4;">本项目非商业运营，仅作为传统文化知识普及，需API和云空间成本，用过的朋友，请打赏一二，维持最低的软件运营成本。</p>
+    
+    <!-- 5元档 -->
+    <div style="border: 1px dashed rgba(201, 168, 108, 0.3); border-radius: 12px; padding: 12px; background: rgba(30,12,12,0.6); display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-size: 13px; font-weight: bold; color: #f0d6a8;">🪙 随喜赞助 (5 元) ── 解锁 50次/天</div>
+      <div style="display: flex; gap: 8px; justify-content: center;">
+        <button onclick="showWechatPay('w5')" style="background: #09bb07; color: #fff; font-size: 11px; padding: 6px 14px; border-radius: 14px; border: none; cursor: pointer; font-weight: 500;">微信扫码</button>
+        <button onclick="openVerifyPaymentModal(50)" style="background: #FFDD00; color: #000; font-size: 11px; padding: 6px 14px; border-radius: 14px; border: none; font-weight: bold; cursor: pointer;">已打赏</button>
+      </div>
+    </div>
+
+    <!-- 10元档 -->
+    <div style="border: 1px dashed rgba(201, 168, 108, 0.3); border-radius: 12px; padding: 12px; background: rgba(30,12,12,0.6); display: flex; flex-direction: column; gap: 6px;">
+      <div style="font-size: 13px; font-weight: bold; color: #f0d6a8;">🪙 随喜赞助 (10 元) ── 解锁 100次/天</div>
+      <div style="display: flex; gap: 8px; justify-content: center;">
+        <button onclick="showWechatPay('w10')" style="background: #09bb07; color: #fff; font-size: 11px; padding: 6px 14px; border-radius: 14px; border: none; cursor: pointer; font-weight: 500;">微信扫码</button>
+        <button onclick="openVerifyPaymentModal(100)" style="background: #FFDD00; color: #000; font-size: 11px; padding: 6px 14px; border-radius: 14px; border: none; font-weight: bold; cursor: pointer;">已打赏</button>
+      </div>
+    </div>
+
+    <!-- 说明提示区 -->
+    <div style="font-size: 10px; color: #806040; text-align: left; line-height: 1.4; padding: 8px; background: rgba(201, 168, 108, 0.08); border-radius: 8px; margin-top: 4px;">
+      💡 <strong>提示：</strong><br>
+      打赏后，点击相应<strong>【已打赏】</strong>按钮，系统审核后将自动解锁算力。
+    </div>
+  </div>
+</div>
+
+<!-- ===== 微信支付单独弹窗 ===== -->
+<div id="wechatPayModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.95); z-index: 1100; align-items: center; justify-content: center; padding: 20px;">
+  <div style="background: #251212; border: 1px solid #c9a86c; border-radius: 16px; width: 100%; max-width: 320px; padding: 24px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; align-items: center; gap: 12px;">
+    <span style="position: absolute; top: 12px; right: 16px; font-size: 20px; color: #a08060; cursor: pointer;" onclick="closeWechatPay()">✕</span>
+    <h4 id="wechatPayTitle" style="font-size: 15px; color: #f0d6a8; margin-top: 10px;">微信扫码支付</h4>
+    
+    <!-- Static image elements to prevent WeChat dynamic src binding failure, set to 240px for larger scanning target -->
+    <img id="wechatPayQr5" src="/pay/w5.jpg" style="width: 240px; height: 240px; border-radius: 8px; border: 2px solid rgba(201,168,108,0.5); margin: 10px 0; display: none;">
+    <img id="wechatPayQr10" src="/pay/w10.jpg" style="width: 240px; height: 240px; border-radius: 8px; border: 2px solid rgba(201,168,108,0.5); margin: 10px 0; display: none;">
+    
+    <p style="font-size: 11px; color: #a08060; line-height: 1.4; padding: 0 10px;">提示：请保存二维码，用微信“扫一扫”，扫描保存的图片。</p>
+    <button onclick="closeWechatPay()" style="background: rgba(201,168,108,0.2); border: 1px solid #c9a86c; color: #c9a86c; font-size: 12px; padding: 6px 20px; border-radius: 14px; cursor: pointer; margin-top: 5px;">返回</button>
+  </div>
+</div>
+
+<!-- ===== 兑换码弹窗 ===== -->
+<div id="activationModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);">
+  <div style="background: #251212; border: 1px solid #c9a86c; border-radius: 16px; width: 100%; max-width: 340px; padding: 24px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 14px;">
+    <span style="position: absolute; top: 12px; right: 16px; font-size: 20px; color: #a08060; cursor: pointer;" onclick="closeActivationModal()">✕</span>
+    <h3 style="font-size: 18px; color: #f0d6a8; letter-spacing: 2px;">🔑 兑换码</h3>
+    <p style="font-size: 11px; color: #a08060; line-height: 1.4;">请输入您的算力兑换码</p>
+    
+    <input type="text" id="activationCodeInput" placeholder="输入或粘贴 fs50_ / fs100_ 开头的兑换码" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #c9a86c; background: rgba(30,12,12,0.8); color: #f0d6a8; font-size: 13px; outline: none; text-align: center;">
+    
+    <div style="display: flex; gap: 10px; width: 100%;">
+      <button onclick="closeActivationModal()" style="flex: 1; padding: 10px; border-radius: 18px; border: 1px solid rgba(201,168,108,0.4); background: transparent; color: #c9a86c; font-size: 13px; cursor: pointer;">取消</button>
+      <button onclick="submitActivationCode()" style="flex: 1; padding: 10px; border-radius: 18px; border: none; background: #c9a86c; color: #1a0a0a; font-size: 13px; font-weight: bold; cursor: pointer;">兑换</button>
+    </div>
+    
+    <div style="font-size: 10px; color: #604030; margin-top: 4px; line-height: 1.3;">
+      当前设备ID：<br><span id="clientUuidDisplay" style="font-family: monospace; font-size: 9px; color: #806040;">--</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 介绍弹窗 ===== -->
+<div id="introModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);">
+  <div style="background: #251212; border: 1px solid #c9a86c; border-radius: 16px; width: 100%; max-width: 340px; padding: 24px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 14px;">
+    <span style="position: absolute; top: 12px; right: 16px; font-size: 20px; color: #a08060; cursor: pointer;" onclick="closeIntroModal()">✕</span>
+    <h3 style="font-size: 16px; color: #f0d6a8; letter-spacing: 2px;">📖 软件说明</h3>
+    <p style="font-size: 12px; color: #a08060; line-height: 1.6; text-align: left; text-indent: 2em; margin: 10px 0;">
+      本软件根据中国传统文化风水理论制作，聚焦居家、旺铺、办公、装修等空间设计摆放等事宜，仅供参考。风水与中医，作为古老国学之传承，去其糟粕，取其精华，请勿从事任何迷信活动。
+    </p>
+    <button onclick="closeIntroModal()" style="width: 100%; padding: 10px; border-radius: 18px; border: 1px solid rgba(201,168,108,0.4); background: transparent; color: #c9a86c; font-size: 13px; cursor: pointer;">我知道了</button>
+  </div>
+</div>
+
+<!-- ===== 打赏核对弹窗 ===== -->
+<div id="verifyPaymentModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 1200; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(5px);">
+  <div style="background: #251212; border: 1px solid #c9a86c; border-radius: 16px; width: 100%; max-width: 340px; padding: 24px; text-align: center; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); display: flex; flex-direction: column; gap: 14px;">
+    <span style="position: absolute; top: 12px; right: 16px; font-size: 20px; color: #a08060; cursor: pointer;" onclick="closeVerifyPaymentModal()">✕</span>
+    <h3 style="font-size: 18px; color: #f0d6a8; letter-spacing: 2px;">🧧 打赏核对</h3>
+    <p id="verificationStatusText" style="font-size: 12px; color: #a08060; line-height: 1.5; text-align: left;">
+      为防止误触，请填写您的<strong>打赏微信昵称</strong>或<strong>付款单号后4位</strong>，以便系统自动发放并为您激活专属算力：
+    </p>
+    
+    <input type="text" id="paymentInfoInput" placeholder="打赏昵称 或 单号后4位 (必填)" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #c9a86c; background: rgba(30,12,12,0.8); color: #f0d6a8; font-size: 13px; outline: none; text-align: center;">
+    
+    <input type="text" id="cooperationInterestInput" placeholder="有何合作意向 / 项目留言 (选填)" style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid rgba(201, 168, 108, 0.4); background: rgba(30,12,12,0.8); color: #f0d6a8; font-size: 13px; outline: none; text-align: center;">
+    
+    <div style="display: flex; gap: 10px; width: 100%;">
+      <button onclick="closeVerifyPaymentModal()" style="flex: 1; padding: 10px; border-radius: 18px; border: 1px solid rgba(201, 168, 108, 0.4); background: transparent; color: #c9a86c; font-size: 13px; cursor: pointer;">取消</button>
+      <button onclick="submitVerifyPayment()" style="flex: 1; padding: 10px; border-radius: 18px; border: none; background: #c9a86c; color: #1a0a0a; font-size: 13px; font-weight: bold; cursor: pointer;">提交核对</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== 优雅提示弹窗 (Toast) ===== -->
+<div id="cameraHintToast" style="display: none; position: fixed; top: 120px; left: 50%; transform: translateX(-50%); background: rgba(37, 18, 18, 0.95); border: 1px solid #c9a86c; color: #f0d6a8; padding: 12px 24px; border-radius: 20px; font-size: 13px; z-index: 1000; box-shadow: 0 4px 15px rgba(0,0,0,0.5); pointer-events: none; opacity: 0; transition: opacity 0.3s ease; text-align: center; width: 85%; max-width: 300px; line-height: 1.5;">
+  📸 请使用右上角 📷 拍下您的空间<br>
+  即可开始智能风水测算
+</div>
+
+<script>
+let currentScene = '';
+let qaIndex = 0;
+let qaList = [];
+let userAnswers = {};
+let capturedImageBase64 = null;
+let currentHeading = '未知';
+let currentHeadingAngle = 0;
+let prescanData = null;
+
+let clientUuid = localStorage.getItem('client_uuid');
+if (!clientUuid) {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    clientUuid = crypto.randomUUID();
+  } else {
+    clientUuid = 'user-' + Math.random().toString(36).substring(2, 15) + '-' + Date.now().toString(36);
+  }
+  localStorage.setItem('client_uuid', clientUuid);
+}
+
+// ===== 罗盘交互与传感器注册 (DeviceOrientation) =====
+let currentAngle = 0;
+let isDragging = false;
+let startAngle = 0;
+let startRotate = 0;
+let sensorActive = false;
+let idleAnimationId = null;
+let idleTimer = null;
+let hasShownCameraHint = false;
+
+
+
+function showCameraHint() {
+  if (hasShownCameraHint) return;
+  hasShownCameraHint = true;
+  
+  const toast = document.getElementById('cameraHintToast');
+  if (!toast) return;
+  
+  toast.style.display = 'block';
+  setTimeout(() => {
+    toast.style.opacity = '1';
+  }, 50);
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => {
+      toast.style.display = 'none';
+    }, 300);
+  }, 2500);
+}
+
+function startIdleRotation() {
+  if (sensorActive || isDragging) return;
+  stopIdleRotation();
+
+  function animate() {
+    if (sensorActive || isDragging) return;
+    
+    currentAngle = (currentAngle + 0.04) % 360; // 极慢的速度，大约每帧0.04度
+    const dial = document.getElementById('luopanDial');
+    if (dial) {
+      dial.style.transform = `rotate(${currentAngle}deg) scale(1.15)`;
+    }
+    
+    let heading = (360 - currentAngle) % 360;
+    updateLuopanHeading(heading);
+    
+    idleAnimationId = requestAnimationFrame(animate);
+  }
+  
+  idleAnimationId = requestAnimationFrame(animate);
+}
+
+function stopIdleRotation() {
+  if (idleAnimationId) {
+    cancelAnimationFrame(idleAnimationId);
+    idleAnimationId = null;
+  }
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+}
+
+function updateLuopanHeading(heading) {
+  // 规范化角度到 0 - 360 度
+  heading = (heading % 360 + 360) % 360;
+  currentHeadingAngle = Math.round(heading);
+  
+  // 传统的风水二十四山划分
+  const mountains = [
+    '子 (正北)', '癸', '丑', '艮 (东北)', '寅', '甲', '卯 (正东)', '乙', 
+    '辰', '巽 (东南)', '巳', '丙', '午 (正南)', '丁', '未', '坤 (西南)', 
+    '申', '庚', '酉 (正西)', '辛', '戌', '乾 (西北)', '亥', '壬'
+  ];
+  const mountainIdx = Math.round(heading / 15) % 24;
+  currentHeading = mountains[mountainIdx];
+  
+  document.getElementById('compassText').textContent = `🧭 罗盘指向：${currentHeading} (${currentHeadingAngle}°)`;
+}
+
+function initLuopanInteractive() {
+  const dial = document.getElementById('luopanDial');
+  if (!dial) return;
+
+  function getAngle(x, y) {
+    const rect = dial.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+    return Math.atan2(y - centerY, x - centerX) * (180 / Math.PI);
+  }
+
+  function handleStart(e) {
+    sensorActive = false; // 拖动时，断开重力感应
+    isDragging = true;
+    stopIdleRotation(); // 停止闲置自动旋转
+    dial.style.cursor = 'grabbing';
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    startAngle = getAngle(clientX, clientY);
+    startRotate = currentAngle;
+    
+    // 第一次拨动罗盘时，弹出优雅提示
+    showCameraHint();
+  }
+
+  function handleMove(e) {
+    if (!isDragging) return;
+    const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+    const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+    const currentTouchAngle = getAngle(clientX, clientY);
+    const delta = currentTouchAngle - startAngle;
+    
+    currentAngle = startRotate + delta;
+    dial.style.transform = `rotate(${currentAngle}deg) scale(1.15)`;
+    
+    // 旋转盘面角度转为地理方向角：转盘顺时针旋转 angle，相当于指向逆时针偏转
+    let heading = (360 - currentAngle) % 360;
+    updateLuopanHeading(heading);
+  }
+
+  function handleEnd() {
+    if (!isDragging) return;
+    isDragging = false;
+    dial.style.cursor = 'grab';
+    
+    // 取消闲置自动旋转，松开后保持当前指向
+    stopIdleRotation();
+    /*
+    idleTimer = setTimeout(() => {
+      startIdleRotation();
+    }, 3000);
+    */
+  }
+
+  // 鼠标拖拽事件
+  dial.addEventListener('mousedown', handleStart);
+  window.addEventListener('mousemove', handleMove);
+  window.addEventListener('mouseup', handleEnd);
+
+  // 手机端拖拽事件
+  dial.addEventListener('touchstart', handleStart, { passive: false });
+  dial.addEventListener('touchmove', handleMove, { passive: false });
+  dial.addEventListener('touchend', handleEnd);
+}
+
+function initCompass() {
+  if (window.DeviceOrientationEvent) {
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission()
+        .then(permissionState => {
+          if (permissionState === 'granted') {
+            bindCompassEvent();
+          } else {
+            document.getElementById('compassText').textContent = '🧭 罗盘授权被拒，可拖拽罗盘指向';
+          }
+        })
+        .catch(console.error);
+    } else {
+      bindCompassEvent();
+    }
+  } else {
+    document.getElementById('compassText').textContent = '🧭 不支持罗盘，可拖拽罗盘指向';
+  }
+}
+
+function bindCompassEvent() {
+  // 优先在安卓上使用绝对方向事件 (deviceorientationabsolute)
+  const useAbsolute = 'ondeviceorientationabsolute' in window;
+  const eventName = useAbsolute ? 'deviceorientationabsolute' : 'deviceorientation';
+
+  window.addEventListener(eventName, (event) => {
+    if (isDragging) return; // 手指正在拖动时，不响应传感器
+    
+    let heading = null;
+    if (event.webkitCompassHeading !== undefined) {
+      heading = event.webkitCompassHeading; // iOS 绝对磁北指向
+    } else if (event.alpha !== null && (event.absolute || useAbsolute)) {
+      heading = 360 - event.alpha; // Android 绝对磁北指向
+    } else if (event.alpha !== null) {
+      heading = 360 - event.alpha; // 降级使用相对方向
+    }
+    
+    if (heading === null) return;
+    
+    sensorActive = true;
+    stopIdleRotation(); // 重力感应生效后，停止自动慢速转动
+    currentAngle = -heading; // 让盘面逆向转动，使北方保持地理北极
+    document.getElementById('luopanDial').style.transform = `rotate(${currentAngle}deg) scale(1.15)`;
+    updateLuopanHeading(heading);
+  }, true);
+}
+
+// 首次交互或加载时初始化罗盘和交互
+document.addEventListener('DOMContentLoaded', () => {
+  initLuopanInteractive();
+  // startIdleRotation(); // 默认取消闲置时的自动旋转，让没有陀螺仪的用户端保持清静，更像真实罗盘
+  loadClientLimit();
+  checkPendingStatus(); // Auto start polling if user has a pending review
+  logVisitEvent('打开首页'); // Log visit event
+});
+
+document.body.addEventListener('click', () => {
+  if (!sensorActive) {
+    initCompass();
+  }
+}, { once: true });
+
+// ===== 屏幕切换 =====
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ===== 拍照与图片压缩标准化 (Canvas) =====
+function triggerPhotoCapture() {
+  // 触发原生或微信兼容的文件选择器（支持拍照和相册）
+  document.getElementById('cameraInput').click();
+}
+
+function handleFileInput(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  showScreen('analyzing');
+  setAnalyzeStep("读取图片中...");
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      setAnalyzeStep("正在压缩并标准化分辨率...");
+      
+      // ===== 核心标准化逻辑：最大边限制在 1024 像素 =====
+      const MAX_WIDTH = 1024;
+      const MAX_HEIGHT = 1024;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width *= MAX_HEIGHT / height;
+          height = MAX_HEIGHT;
+        }
+      }
+
+      // 使用 Canvas 进行重绘和尺寸归一化
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+
+      // 导出为体积小、速度快的标准化 JPEG Base64 数据
+      capturedImageBase64 = canvas.toDataURL('image/jpeg', 0.85);
+      console.log(`[Image Compress] Original: ${img.width}x${img.height}, Standardized: ${width}x${height}`);
+
+      setAnalyzeStep("特征匹配成功！");
+      setTimeout(() => {
+        showScreen('sceneConfirm');
+      }, 600);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function setAnalyzeStep(msg) {
+  document.getElementById('analyzeStep').textContent = msg;
+}
+
+// ===== 场景确认与问答构造 =====
+// ===== 场景确认与智能预扫描 =====
+function confirmScene(scene) {
+  startPrescan(scene);
+}
+
+async function startPrescan(scene) {
+  currentScene = scene;
+  showScreen('analyzing');
+  setAnalyzeStep("AI 大师正开法眼审视空间布局...");
+  logVisitEvent('发起预扫描', scene); // Log pre-scan event
+
+  const model = 'google/gemini-2.5-flash-lite';
+  try {
+    const response = await fetch('/api/prescan', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-client-uuid': clientUuid
+      },
+      body: JSON.stringify({
+        image: capturedImageBase64,
+        scene_type: currentScene,
+        model: model
+      })
+    });
+
+    if (response.status === 429) {
+      const data = await response.json();
+      alert(data.message || '☯ 您今天的 6 次免费测算额度已用完，请明天再来！');
+      goHome();
+      return;
+    }
+
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      throw new Error(data.message || data.error || `HTTP error ${response.status}`);
+    }
+
+    prescanData = data;
+    qaList = data.questions || [];
+    qaIndex = 0;
+    userAnswers = {};
+
+    // Refresh quota count instantly
+    loadClientLimit();
+
+    showScreen('qa');
+    const chat = document.getElementById('qaChat');
+    
+    // Construct HTML for detected items
+    let detectedHtml = '';
+    if (data.detected && data.detected.length > 0) {
+      detectedHtml += `<div style="font-size: 13px; color: #a08060; margin-top: 8px; border-left: 2px solid #5a9a6a; padding-left: 8px; text-align: left; background: rgba(90,154,106,0.05); padding-top: 6px; padding-bottom: 6px; border-radius: 0 4px 4px 0;">`;
+      detectedHtml += `<strong style="color: #7aba7a;">🔮 AI 已识别布局：</strong><br>`;
+      data.detected.forEach(item => {
+        detectedHtml += `• ${item}<br>`;
+      });
+      detectedHtml += `</div>`;
+    }
+
+    chat.innerHTML = `
+      <div class="qa-bubble ai">
+        📷 收到！已识图当前为【${currentScene}】。
+        ${detectedHtml}
+        <br>为了更精确地审计风水，我们需要确认以下细节：
+      </div>
+    `;
+
+    if (qaList.length === 0) {
+      const noQDiv = document.createElement('div');
+      noQDiv.className = 'qa-bubble ai';
+      noQDiv.innerHTML = `✨ 视觉信息已足够完整，无需额外提问，可以直接生成报告！`;
+      chat.appendChild(noQDiv);
+      
+      const startBtnWrap = document.createElement('div');
+      startBtnWrap.className = 'qa-options';
+      const startBtn = document.createElement('button');
+      startBtn.className = 'qa-opt';
+      startBtn.style.background = '#c9a86c';
+      startBtn.style.color = '#1a0a0a';
+      startBtn.style.fontWeight = 'bold';
+      startBtn.textContent = '直接生成风水报告';
+      startBtn.onclick = () => sendToBackendForAudit();
+      startBtnWrap.appendChild(startBtn);
+      chat.appendChild(startBtnWrap);
+      chat.scrollTop = chat.scrollHeight;
+    } else {
+      setTimeout(() => askQuestion(), 500);
+    }
+
+  } catch (error) {
+    console.error("Prescan failed:", error);
+    alert(`预扫描失败: ${error.message}\n将进入常规直接分析。`);
+    prescanData = null;
+    qaList = [];
+    sendToBackendForAudit();
+  }
+}
+
+function askQuestion() {
+  const chat = document.getElementById('qaChat');
+  if (qaIndex >= qaList.length) {
+    sendToBackendForAudit();
+    return;
+  }
+  
+  const q = qaList[qaIndex];
+  const div = document.createElement('div');
+  div.className = 'qa-bubble ai';
+  div.textContent = q.q;
+  chat.appendChild(div);
+  
+  const optDiv = document.createElement('div');
+  optDiv.className = 'qa-options';
+  
+  const opts = q.opts || ["是", "否"];
+  opts.forEach(o => {
+    const btn = document.createElement('button');
+    btn.className = 'qa-opt';
+    btn.textContent = o;
+    btn.onclick = () => {
+      userAnswers[q.key || q.q] = o;
+      const userDiv = document.createElement('div');
+      userDiv.className = 'qa-bubble user';
+      userDiv.textContent = o;
+      chat.appendChild(userDiv);
+      optDiv.remove();
+      qaIndex++;
+      setTimeout(() => askQuestion(), 400);
+    };
+    optDiv.appendChild(btn);
+  });
+  chat.appendChild(optDiv);
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function skipQAAndAnalyze() {
+  sendToBackendForAudit();
+}
+
+// ===== 💡 核心接口：发送大模型进行多模态视觉审计 =====
+async function sendToBackendForAudit() {
+  showScreen('analyzing');
+  setAnalyzeStep("大模型正在看图算卦中 (约耗时3-5秒)...");
+  logVisitEvent('生成风水报告', currentScene); // Log analyze event
+
+  const model = 'google/gemini-2.5-flash-lite';
+  const payload = {
+    image: capturedImageBase64,
+    scene_type: currentScene,
+    orientation: currentHeading,
+    user_answers: userAnswers,
+    prescan_data: prescanData,
+    model: model
+  };
+
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-client-uuid': clientUuid
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.status === 429) {
+      const data = await response.json();
+      alert(data.message || '☯ 您今天的 6 次免费测算额度已用完，请明天再来！');
+      goHome();
+      return;
+    }
+
+    const data = await response.json();
+
+    if (!response.ok || data.error) {
+      throw new Error(data.message || data.error || `HTTP error ${response.status}`);
+    }
+
+    renderReport(data);
+
+  } catch (error) {
+    alert(`风水大师罢工了！错误信息:\n${error.message}`);
+    renderError(error.message);
+  }
+}
+
+// ===== 渲染报告 =====
+function renderReport(report) {
+  document.getElementById('resultTitle').textContent = `🏡 ${currentScene}风水审计报告`;
+  
+  const score = report.score || 60;
+  document.getElementById('scoreRing').textContent = score;
+  
+  // 环状评分背景微调
+  const ring = document.getElementById('scoreRing');
+  if (score >= 80) {
+    ring.style.borderColor = '#5a9a6a';
+  } else if (score >= 60) {
+    ring.style.borderColor = '#c9a86c';
+  } else {
+    ring.style.borderColor = '#b05850';
+  }
+
+
+  const cards = document.getElementById('resultCards');
+  cards.innerHTML = '';
+
+  // 1. 吉布局卡片
+  if (report.goods && report.goods.length) {
+    const div = document.createElement('div');
+    div.className = 'r-card good';
+    div.innerHTML = `<div class="label">✅ 吉 · 布局得当</div><ul>${report.goods.map(g => `<li>${g}</li>`).join('')}</ul>`;
+    cards.appendChild(div);
+  }
+
+  // 2. 隐患卡片
+  if (report.bads && report.bads.length) {
+    const div = document.createElement('div');
+    div.className = 'r-card bad';
+    div.innerHTML = `<div class="label">❌ 煞 · 需要注意</div><ul>${report.bads.map(b => `<li>${b}</li>`).join('')}</ul>`;
+    cards.appendChild(div);
+  }
+
+  // 3. 改善建议卡片
+  if (report.tips && report.tips.length) {
+    const div = document.createElement('div');
+    div.className = 'r-card tip';
+    div.innerHTML = `<div class="label">💡 禳 · 改善建议</div><ul>${report.tips.map(t => `<li>${t}</li>`).join('')}</ul>`;
+    cards.appendChild(div);
+  }
+
+  // 4. 罗盘与总结参考
+  const summaryDiv = document.createElement('div');
+  summaryDiv.className = 'r-card tip';
+  summaryDiv.innerHTML = `<div class="label">🧭 天星方位参考</div>
+    <p style="font-size: 13px; color: #a08060; margin-top: 4px; line-height: 1.4;">
+      空间朝向为：<strong>${currentHeading}</strong>。<br>
+      本次计算已在云端检索风水小百科，大模型判定空间气流与陈设契合度符合上述报告。
+    </p>`;
+  cards.appendChild(summaryDiv);
+
+  showScreen('result');
+}
+
+function renderError(errMsg) {
+  document.getElementById('resultTitle').textContent = `⚠️ 分析发生错误`;
+  document.getElementById('scoreRing').textContent = 'X';
+  document.getElementById('scoreRing').style.borderColor = '#b05850';
+  
+  const cards = document.getElementById('resultCards');
+  cards.innerHTML = `
+    <div class="r-card bad">
+      <div class="label">调用 API 失败</div>
+      <p style="font-size: 13px; line-height: 1.4;">请检查电脑控制台的后端输出。常见原因有：</p>
+      <ul style="margin-top: 8px;">
+        <li>未配置 <strong>OPENROUTER_API_KEY</strong>。请在 <code>deepseek-tui/env.json</code> 中填写。</li>
+        <li>OpenRouter 网络连接超时。</li>
+        <li>选定的模型（如免费版）当前在 OpenRouter 排队拥堵。</li>
+      </ul>
+      <p style="font-size: 11px; color: #805050; margin-top: 10px;">详细报错: ${errMsg}</p>
+    </div>
+  `;
+  showScreen('result');
+}
+
+// ===== 返回与操作 =====
+function goHome() {
+  capturedImageBase64 = null;
+  currentScene = '';
+  qaList = [];
+  userAnswers = {};
+  showScreen('home');
+}
+
+function shareResult() {
+  const score = document.getElementById('scoreRing').textContent;
+  let text = `🏡 我的${currentScene}风水评分：${score}分\n\n`;
+  const items = [];
+  document.querySelectorAll('.r-card li').forEach(li => items.push('· ' + li.textContent));
+  text += items.join('\n');
+  
+  navigator.clipboard.writeText(text)
+    .then(() => alert('建议已成功复制到剪贴板，快去发给微信好友吧！'))
+    .catch(() => alert('复制失败，请手动长按选择文字复制'));
+}
+
+function openDonateModal() {
+  document.getElementById('donateModal').style.display = 'flex';
+}
+
+function closeDonateModal() {
+  document.getElementById('donateModal').style.display = 'none';
+}
+
+function openIntroModal() {
+  document.getElementById('introModal').style.display = 'flex';
+}
+
+function closeIntroModal() {
+  document.getElementById('introModal').style.display = 'none';
+}
+
+function openActivationModal() {
+  document.getElementById('activationCodeInput').value = '';
+  document.getElementById('clientUuidDisplay').textContent = clientUuid;
+  document.getElementById('activationModal').style.display = 'flex';
+}
+
+function closeActivationModal() {
+  document.getElementById('activationModal').style.display = 'none';
+}
+
+function showWechatPay(type) {
+  const title = type === 'w5' ? '微信打赏 5 元' : '微信打赏 10 元';
+  document.getElementById('wechatPayTitle').textContent = title;
+  
+  if (type === 'w5') {
+    document.getElementById('wechatPayQr5').style.display = 'block';
+    document.getElementById('wechatPayQr10').style.display = 'none';
+  } else {
+    document.getElementById('wechatPayQr5').style.display = 'none';
+    document.getElementById('wechatPayQr10').style.display = 'block';
+  }
+  
+  document.getElementById('wechatPayModal').style.display = 'flex';
+}
+
+function closeWechatPay() {
+  document.getElementById('wechatPayModal').style.display = 'none';
+  document.getElementById('wechatPayQr5').style.display = 'none';
+  document.getElementById('wechatPayQr10').style.display = 'none';
+}
+
+let pendingClaimTier = null;
+let checkUnlockInterval = null;
+
+async function checkPendingStatus() {
+  try {
+    const response = await fetch(`/api/check-unlock?client_uuid=${clientUuid}`);
+    const data = await response.json();
+    
+    if (data.unlocked) {
+      if (checkUnlockInterval) {
+        clearInterval(checkUnlockInterval);
+        checkUnlockInterval = null;
+      }
+      updateQuotaUI(data.limit);
+      
+      const modal = document.getElementById('verifyPaymentModal');
+      if (modal && modal.style.display === 'flex') {
+        alert(`🎉 恭喜！您的打赏核对已通过！\n设备每日算力已升级为 ${data.limit} 次。`);
+        closeVerifyPaymentModal();
+        closeDonateModal();
+      }
+    } else if (data.status === 'pending') {
+      const statusDiv = document.getElementById('verificationStatusText');
+      if (statusDiv) {
+        statusDiv.innerHTML = `<span style="color: #ffd200;">⏳ 已提交打赏核对（${data.payment_info}）<br>后台人工核对中，审核通过后设备会自动升级，您无需手动输入兑换码。您可以先关闭此弹窗或继续等待。</span>`;
+      }
+      
+      // Disable inputs and buttons
+      document.getElementById('paymentInfoInput').disabled = true;
+      document.getElementById('paymentInfoInput').value = data.payment_info;
+      document.getElementById('cooperationInterestInput').disabled = true;
+      
+      if (!checkUnlockInterval) {
+        checkUnlockInterval = setInterval(checkPendingStatus, 8000);
+      }
+    } else if (data.status === 'rejected') {
+      const statusDiv = document.getElementById('verificationStatusText');
+      if (statusDiv) {
+        statusDiv.innerHTML = `<span style="color: #b05850;">❌ 打赏核对未通过，请检查您填写的昵称或单号是否正确。</span>`;
+      }
+      document.getElementById('paymentInfoInput').disabled = false;
+      if (checkUnlockInterval) {
+        clearInterval(checkUnlockInterval);
+        checkUnlockInterval = null;
+      }
+    } else {
+      const statusDiv = document.getElementById('verificationStatusText');
+      if (statusDiv) {
+        statusDiv.innerHTML = `为防止误触，请填写您的<strong>打赏微信昵称</strong>或<strong>付款单号后4位</strong>，以便系统自动发放并为您激活专属算力：`;
+      }
+      document.getElementById('paymentInfoInput').disabled = false;
+      if (checkUnlockInterval) {
+        clearInterval(checkUnlockInterval);
+        checkUnlockInterval = null;
+      }
+    }
+  } catch (e) {
+    console.error('检查打赏审核状态失败:', e);
+  }
+}
+
+function openVerifyPaymentModal(tier) {
+  pendingClaimTier = tier;
+  document.getElementById('paymentInfoInput').value = '';
+  document.getElementById('paymentInfoInput').disabled = false;
+  document.getElementById('verifyPaymentModal').style.display = 'flex';
+  
+  // Set default message
+  const statusDiv = document.getElementById('verificationStatusText');
+  if (statusDiv) {
+    statusDiv.innerHTML = `为防止误触，请填写您的<strong>打赏微信昵称</strong>或<strong>付款单号后4位</strong>，以便系统自动发放并为您激活专属算力：`;
+  }
+  
+  checkPendingStatus();
+  
+  setTimeout(() => {
+    document.getElementById('paymentInfoInput').focus();
+  }, 100);
+}
+
+function closeVerifyPaymentModal() {
+  document.getElementById('verifyPaymentModal').style.display = 'none';
+  pendingClaimTier = null;
+}
+
+async function submitVerifyPayment() {
+  const submitBtn = document.querySelector('#verifyPaymentModal button[onclick="submitVerifyPayment()"]');
+  const paymentInfo = document.getElementById('paymentInfoInput').value.trim();
+  if (!paymentInfo) {
+    alert('请输入打赏付款昵称或单号后4位以供核对。');
+    return;
+  }
+  
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '提交中...';
+    submitBtn.style.opacity = '0.6';
+  }
+  
+  try {
+    await claimCode(pendingClaimTier, paymentInfo);
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = '提交核对';
+      submitBtn.style.opacity = '1';
+    }
+  }
+}
+
+async function claimCode(tier, paymentInfo) {
+  try {
+    const response = await fetch('/api/claim-code', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        client_uuid: clientUuid,
+        tier: tier,
+        payment_info: paymentInfo
+      })
+    });
+    
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      alert(data.message || data.error || '获取兑换码失败');
+      return;
+    }
+    
+    // Switch to status polling immediately
+    checkPendingStatus();
+  } catch (e) {
+    alert('网络请求出错，请稍后重试。');
+  }
+}
+
+async function submitActivationCode() {
+  const code = document.getElementById('activationCodeInput').value.trim();
+  if (!code) {
+    alert('请输入兑换码！');
+    return;
+  }
+  
+  try {
+    const response = await fetch('/api/activate-code', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        client_uuid: clientUuid,
+        code: code
+      })
+    });
+    
+    const data = await response.json();
+    if (!response.ok || data.error) {
+      alert(data.message || data.error || '兑换失败');
+      return;
+    }
+    
+    alert(`🎉 兑换成功！当前每日算力次数已更新为 ${data.limit} 次。`);
+    logVisitEvent('激活兑换码'); // Log activation event
+    closeActivationModal();
+    // Update local display and limits
+    updateQuotaUI(data.limit);
+  } catch (e) {
+    alert('请求兑换码验证出错，请稍后重试。');
+  }
+}
+
+function updateQuotaUI(data) {
+  const quotaText = document.getElementById('currentQuotaText');
+  if (quotaText) {
+    if (data && typeof data === 'object') {
+      quotaText.textContent = `今日算力: ${data.remaining}/${data.limit} 次 (已用 ${data.usage} 次)`;
+    } else if (data !== undefined) {
+      quotaText.textContent = `今日算力: ${data} 次`;
+    }
+  }
+}
+
+async function loadClientLimit() {
+  try {
+    const response = await fetch(`/api/client-limit?client_uuid=${clientUuid}`);
+    const data = await response.json();
+    updateQuotaUI(data);
+  } catch (e) {
+    console.error('加载限额失败:', e);
+  }
+}
+
+async function logVisitEvent(eventType, scene = '无') {
+  try {
+    fetch('/api/log-visit', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        client_uuid: clientUuid,
+        event_type: eventType,
+        scene: scene,
+        viewport: `${window.innerWidth}x${window.innerHeight}`,
+        user_agent: navigator.userAgent
+      })
+    });
+  } catch (e) {
+    console.error('Failed to log event:', e);
+  }
+}
+</script>
+</body>
+</html>
