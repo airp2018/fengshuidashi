@@ -1,5 +1,7 @@
 # ☯ 风水大师 FengShuiMaster
 
+[简体中文](README.md) | [English](README_EN.md)
+
 > **拍下你所在的空间，看看家具和方位应该怎样调整。**
 
 [立即在线体验](https://fengshuidashi.onrender.com/) · 手机浏览器可直接拍照使用
