@@ -1120,6 +1120,46 @@ app.get('/api/client-limit', async (req, res) => {
 });
 
 const logQueue = [];
+const TRANSPARENT_GIF = Buffer.from(
+  'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
+  'base64'
+);
+
+// Lightweight endpoint for uptime checks. Keep this separate from tracking routes.
+app.get('/health', (req, res) => {
+  res.status(200).type('text/plain').send('OK');
+});
+
+// Invisible 1x1 email tracking pixel. Each email should use a unique random ID.
+app.get('/email/open/:trackingId.gif', (req, res) => {
+  const trackingId = String(req.params.trackingId || '');
+
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(trackingId)) {
+    return res.status(400).type('text/plain').send('Invalid tracking ID');
+  }
+
+  logQueue.push({
+    fields: {
+      "设备 ID": `email:${trackingId}`,
+      "IP 地址": '未记录',
+      "时间": new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+      "事件类型": '邮件跟踪像素加载',
+      "测算场景": '投稿邮件',
+      "设备环境 (UserAgent)": '',
+      "设备尺寸": ''
+    }
+  });
+
+  res.set({
+    'Content-Type': 'image/gif',
+    'Content-Length': TRANSPARENT_GIF.length,
+    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'X-Robots-Tag': 'noindex, nofollow'
+  });
+  return res.status(200).send(TRANSPARENT_GIF);
+});
 
 // POST API to log visit events from client browser
 app.post('/api/log-visit', (req, res) => {
