@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const feishu = require('./feishu');
+const { normalizeUploadFilename } = require('./email-filename');
 
 // Concurrency locks to prevent double-click duplicate entries
 const activeClaims = new Set();
@@ -1324,7 +1325,7 @@ app.post('/api/email/send', (req, res) => {
         text: body,
         html,
         attachments: attachments.map(file => ({
-          filename: file.originalname,
+          filename: normalizeUploadFilename(file.originalname),
           content: file.buffer,
           contentType: file.mimetype
         }))
