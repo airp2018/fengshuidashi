@@ -7,6 +7,7 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const feishu = require('./feishu');
 const { normalizeUploadFilename } = require('./email-filename');
+const { summarizeEmailOpenEvents } = require('./email-tracking');
 
 // Concurrency locks to prevent double-click duplicate entries
 const activeClaims = new Set();
@@ -1129,6 +1130,7 @@ app.get('/api/client-limit', async (req, res) => {
 });
 
 const logQueue = [];
+const emailOpenEvents = new Map();
 const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
@@ -1213,11 +1215,22 @@ app.get('/email/open/:trackingId.gif', (req, res) => {
     return res.status(400).type('text/plain').send('Invalid tracking ID');
   }
 
+  const openedAt = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
+  const currentStatus = emailOpenEvents.get(trackingId) || {
+    opened: true,
+    open_count: 0,
+    first_opened_at: openedAt,
+    last_opened_at: openedAt
+  };
+  currentStatus.open_count += 1;
+  currentStatus.last_opened_at = openedAt;
+  emailOpenEvents.set(trackingId, currentStatus);
+
   logQueue.push({
     fields: {
       "设备 ID": `email:${trackingId}`,
       "IP 地址": '未记录',
-      "时间": new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+      "时间": openedAt,
       "事件类型": '邮件跟踪像素加载',
       "测算场景": '投稿邮件',
       "设备环境 (UserAgent)": '',
@@ -1245,6 +1258,36 @@ app.get('/api/email/status', (req, res) => {
     smtp_configured: Boolean(smtp.user && smtp.pass),
     sender: smtp.user || null
   });
+});
+
+app.get('/api/email/tracking/:trackingId', async (req, res) => {
+  if (!authorizeEmailAdmin(req, res)) return;
+
+  const trackingId = String(req.params.trackingId || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(trackingId)) {
+    return res.status(400).json({ error: 'Invalid Tracking ID', message: '跟踪编号格式不正确。' });
+  }
+
+  try {
+    const persisted = summarizeEmailOpenEvents(
+      await feishu.findEmailTrackingEvents(trackingId)
+    );
+    const live = emailOpenEvents.get(trackingId);
+
+    return res.json({
+      tracking_id: trackingId,
+      opened: Boolean(live?.opened || persisted.opened),
+      open_count: Math.max(live?.open_count || 0, persisted.open_count),
+      first_opened_at: persisted.first_opened_at || live?.first_opened_at || null,
+      last_opened_at: live?.last_opened_at || persisted.last_opened_at || null
+    });
+  } catch (error) {
+    console.error('[Email Tracking Query Error]', error.message);
+    return res.status(502).json({
+      error: 'Tracking Query Failed',
+      message: '暂时无法查询跟踪记录，请稍后再试。'
+    });
+  }
 });
 
 // Send a multipart text + HTML email and append an optional invisible tracking pixel.

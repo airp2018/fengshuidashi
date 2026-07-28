@@ -394,6 +394,57 @@
       background: #fff0ef;
     }
 
+    .tracking-panel {
+      margin: 0 20px 20px;
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfbfc;
+    }
+
+    .tracking-panel-title {
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+
+    .tracking-controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .tracking-controls input {
+      min-width: 0;
+      flex: 1;
+      padding: 9px 11px;
+      border: 1px solid #d7dade;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .tracking-result {
+      margin-top: 11px;
+      padding: 10px 12px;
+      color: var(--muted);
+      border-radius: 6px;
+      background: #f0f1f3;
+    }
+
+    .tracking-result.opened {
+      color: var(--success);
+      background: #e8f7ef;
+    }
+
+    .tracking-result.pending {
+      color: var(--warning);
+      background: #fff6e5;
+    }
+
+    .tracking-disclaimer {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
     .auth-overlay {
       position: fixed;
       inset: 0;
@@ -587,6 +638,16 @@
           </div>
 
           <div id="message" class="message" role="status"></div>
+
+          <section class="tracking-panel" aria-label="邮件打开状态">
+            <div class="tracking-panel-title">打开跟踪</div>
+            <div class="tracking-controls">
+              <input id="trackingIdInput" type="text" placeholder="发送后会自动填入跟踪编号" autocomplete="off">
+              <button id="checkTrackingButton" class="secondary-button" type="button">刷新状态</button>
+            </div>
+            <div id="trackingResult" class="tracking-result">尚未选择跟踪邮件。</div>
+            <div class="tracking-disclaimer">“已打开”只说明邮箱加载过邮件中的图片，可用于确认邮件有效，不代表对方完整阅读。</div>
+          </section>
         </form>
       </main>
     </div>
@@ -621,9 +682,13 @@
     const fileList = document.getElementById('fileList');
     const message = document.getElementById('message');
     const trackingEnabled = document.getElementById('trackingEnabled');
+    const trackingIdInput = document.getElementById('trackingIdInput');
+    const checkTrackingButton = document.getElementById('checkTrackingButton');
+    const trackingResult = document.getElementById('trackingResult');
 
     let sessionPassword = sessionStorage.getItem('emailAdminPassword') || '';
     let smtpConfigured = false;
+    const trackingCheckInterval = 8 * 60 * 60 * 1000;
 
     function showMessage(text, type) {
       message.textContent = text;
@@ -655,6 +720,61 @@
       });
     }
 
+    function setTrackingResult(text, state) {
+      trackingResult.textContent = text;
+      trackingResult.className = `tracking-result ${state || ''}`.trim();
+    }
+
+    async function checkTracking() {
+      const trackingId = trackingIdInput.value.trim();
+      if (!trackingId) {
+        setTrackingResult('请先输入跟踪编号。', 'pending');
+        return;
+      }
+
+      checkTrackingButton.disabled = true;
+      checkTrackingButton.textContent = '查询中…';
+
+      try {
+        const response = await fetch(`/api/email/tracking/${encodeURIComponent(trackingId)}`, {
+          headers: { Authorization: sessionPassword }
+        });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(data.message || '跟踪状态查询失败。');
+        }
+
+        localStorage.setItem('lastEmailTrackingId', trackingId);
+        localStorage.setItem('lastEmailTrackingCheckAt', String(Date.now()));
+
+        if (data.opened) {
+          const timeText = data.last_opened_at ? `；最近打开：${data.last_opened_at}` : '';
+          setTrackingResult(`已打开 · 邮件有效${timeText}`, 'opened');
+        } else {
+          setTrackingResult('暂未检测到打开。邮件可能尚未打开，或对方邮箱拦截了外部图片。', 'pending');
+        }
+      } catch (error) {
+        setTrackingResult(error.message, 'pending');
+      } finally {
+        checkTrackingButton.disabled = false;
+        checkTrackingButton.textContent = '刷新状态';
+      }
+    }
+
+    function restoreTrackingStatus() {
+      const trackingId = localStorage.getItem('lastEmailTrackingId') || '';
+      if (!trackingId) return;
+
+      trackingIdInput.value = trackingId;
+      const lastCheckedAt = Number(localStorage.getItem('lastEmailTrackingCheckAt') || 0);
+      if (Date.now() - lastCheckedAt >= trackingCheckInterval) {
+        checkTracking();
+      } else {
+        setTrackingResult('已载入上次跟踪邮件。点击“刷新状态”可立即查询。');
+      }
+    }
+
     async function checkStatus(password) {
       const response = await fetch('/api/email/status', {
         headers: { Authorization: password }
@@ -665,6 +785,8 @@
         throw new Error(data.message || '管理密码错误。');
       }
 
+      sessionPassword = password;
+      sessionStorage.setItem('emailAdminPassword', password);
       smtpConfigured = Boolean(data.smtp_configured);
       authOverlay.classList.add('hidden');
       accountLabel.textContent = data.sender || 'SMTP 尚未配置';
@@ -672,6 +794,7 @@
       if (smtpConfigured) {
         setConnection('ready', `${data.sender} 已连接`);
         hideMessage();
+        restoreTrackingStatus();
       } else {
         setConnection('warning', 'SMTP 授权码尚未配置');
         showMessage('页面已经可用，但发送前还需在 Render 环境变量中配置 SMTP_USER 和 SMTP_AUTH_CODE。', 'warning');
@@ -685,8 +808,6 @@
 
       try {
         await checkStatus(password);
-        sessionPassword = password;
-        sessionStorage.setItem('emailAdminPassword', password);
         adminPassword.value = '';
       } catch (error) {
         authError.textContent = error.message;
@@ -727,6 +848,12 @@
         document.getElementById('senderName').value = '投稿邮箱';
         trackingEnabled.checked = true;
         renderFiles();
+        if (data.tracking_enabled) {
+          trackingIdInput.value = data.tracking_id;
+          localStorage.setItem('lastEmailTrackingId', data.tracking_id);
+          localStorage.removeItem('lastEmailTrackingCheckAt');
+          setTrackingResult('等待对方邮箱加载跟踪图片。稍后可刷新状态。', 'pending');
+        }
       } catch (error) {
         showMessage(error.message, 'error');
       } finally {
@@ -740,6 +867,7 @@
       document.getElementById('senderName').value = '投稿邮箱';
       trackingEnabled.checked = true;
       renderFiles();
+      trackingIdInput.value = localStorage.getItem('lastEmailTrackingId') || '';
       hideMessage();
     });
 
@@ -751,6 +879,7 @@
     });
 
     attachments.addEventListener('change', renderFiles);
+    checkTrackingButton.addEventListener('click', checkTracking);
 
     if (sessionPassword) {
       checkStatus(sessionPassword).catch(() => {
