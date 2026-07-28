@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const multer = require('multer');
+const nodemailer = require('nodemailer');
 const feishu = require('./feishu');
 
 // Concurrency locks to prevent double-click duplicate entries
@@ -29,6 +32,11 @@ app.get('/admin', (req, res) => {
 });
 app.get('/admin.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
+// Serve the private tracked-email composer.
+app.get('/email/send', (req, res) => {
+  res.sendFile(path.join(__dirname, 'email_sender.html'));
 });
 
 // Helper to load API key from various env.json locations
@@ -1124,6 +1132,72 @@ const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
 );
+const emailUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: 5,
+    fileSize: 20 * 1024 * 1024
+  }
+});
+const emailAuthFailures = new Map();
+
+function authorizeEmailAdmin(req, res) {
+  const clientKey = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
+    .split(',')[0]
+    .trim();
+  const now = Date.now();
+  const current = emailAuthFailures.get(clientKey) || { count: 0, blockedUntil: 0 };
+
+  if (current.blockedUntil > now) {
+    res.status(429).json({ error: 'Too Many Attempts', message: '密码尝试过多，请 15 分钟后再试。' });
+    return false;
+  }
+
+  const provided = Buffer.from(String(req.headers.authorization || ''));
+  const expected = Buffer.from(String(getAdminPassword()));
+  const matches = provided.length === expected.length && crypto.timingSafeEqual(provided, expected);
+
+  if (matches) {
+    emailAuthFailures.delete(clientKey);
+    return true;
+  }
+
+  current.count += 1;
+  if (current.count >= 5) {
+    current.count = 0;
+    current.blockedUntil = now + 15 * 60 * 1000;
+  }
+  emailAuthFailures.set(clientKey, current);
+  res.status(401).json({ error: 'Unauthorized', message: '管理密码错误。' });
+  return false;
+}
+
+function getSmtpConfig() {
+  const port = Number.parseInt(process.env.SMTP_PORT || '465', 10);
+  const secureValue = String(process.env.SMTP_SECURE || 'true').toLowerCase();
+
+  return {
+    host: process.env.SMTP_HOST || 'smtp.163.com',
+    port: Number.isFinite(port) ? port : 465,
+    secure: secureValue !== 'false',
+    user: process.env.SMTP_USER || '',
+    pass: process.env.SMTP_AUTH_CODE || process.env.SMTP_PASS || ''
+  };
+}
+
+function escapeEmailHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function getPublicBaseUrl(req) {
+  const configuredUrl = process.env.PUBLIC_BASE_URL || process.env.RENDER_EXTERNAL_URL;
+  return (configuredUrl || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+}
 
 // Lightweight endpoint for uptime checks. Keep this separate from tracking routes.
 app.get('/health', (req, res) => {
@@ -1159,6 +1233,132 @@ app.get('/email/open/:trackingId.gif', (req, res) => {
     'X-Robots-Tag': 'noindex, nofollow'
   });
   return res.status(200).send(TRANSPARENT_GIF);
+});
+
+// Verify the admin password and report whether SMTP is ready, without exposing secrets.
+app.get('/api/email/status', (req, res) => {
+  if (!authorizeEmailAdmin(req, res)) return;
+
+  const smtp = getSmtpConfig();
+  return res.json({
+    smtp_configured: Boolean(smtp.user && smtp.pass),
+    sender: smtp.user || null
+  });
+});
+
+// Send a multipart text + HTML email and append an optional invisible tracking pixel.
+app.post('/api/email/send', (req, res) => {
+  if (!authorizeEmailAdmin(req, res)) return;
+
+  emailUpload.array('attachments', 5)(req, res, async (uploadError) => {
+    if (uploadError) {
+      const message = uploadError.code === 'LIMIT_FILE_SIZE'
+        ? '单个附件不能超过 20 MB。'
+        : '附件上传失败。';
+      return res.status(400).json({ error: 'Attachment Error', message });
+    }
+
+    const recipient = String(req.body.recipient || '').trim();
+    const subject = String(req.body.subject || '').trim();
+    const body = String(req.body.body || '');
+    const submissionName = String(req.body.submission_name || '').trim();
+    const senderName = String(req.body.sender_name || '投稿邮箱').trim().slice(0, 60);
+    const trackingEnabled = String(req.body.tracking_enabled || 'true') !== 'false';
+    const attachments = req.files || [];
+    const totalAttachmentBytes = attachments.reduce((sum, file) => sum + file.size, 0);
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      return res.status(400).json({ error: 'Invalid Recipient', message: '请输入有效的收件人邮箱。' });
+    }
+    if (!subject || subject.length > 200) {
+      return res.status(400).json({ error: 'Invalid Subject', message: '请输入不超过 200 字的邮件主题。' });
+    }
+    if (!body.trim()) {
+      return res.status(400).json({ error: 'Empty Body', message: '邮件正文不能为空。' });
+    }
+    if (totalAttachmentBytes > 20 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Attachments Too Large', message: '全部附件合计不能超过 20 MB。' });
+    }
+
+    const smtp = getSmtpConfig();
+    if (!smtp.user || !smtp.pass) {
+      return res.status(503).json({
+        error: 'SMTP Not Configured',
+        message: '请先在 Render 环境变量中配置 SMTP_USER 和 SMTP_AUTH_CODE。'
+      });
+    }
+
+    const trackingId = crypto.randomUUID().replace(/-/g, '');
+    const pixelUrl = `${getPublicBaseUrl(req)}/email/open/${trackingId}.gif`;
+    const escapedBody = escapeEmailHtml(body).replace(/\r?\n/g, '<br>');
+    const pixelHtml = trackingEnabled
+      ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="width:1px;height:1px;border:0;">`
+      : '';
+    const html = [
+      '<!doctype html><html><body>',
+      `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#222;">${escapedBody}</div>`,
+      pixelHtml,
+      '</body></html>'
+    ].join('');
+
+    const transporter = nodemailer.createTransport({
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      auth: {
+        user: smtp.user,
+        pass: smtp.pass
+      },
+      disableFileAccess: true,
+      disableUrlAccess: true
+    });
+
+    try {
+      await transporter.sendMail({
+        from: {
+          name: senderName || '投稿邮箱',
+          address: smtp.user
+        },
+        to: recipient,
+        subject,
+        text: body,
+        html,
+        attachments: attachments.map(file => ({
+          filename: file.originalname,
+          content: file.buffer,
+          contentType: file.mimetype
+        }))
+      });
+
+      logQueue.push({
+        fields: {
+          "设备 ID": `email:${trackingId}`,
+          "IP 地址": '未记录',
+          "时间": new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          "事件类型": trackingEnabled ? '投稿邮件已发送（跟踪开启）' : '投稿邮件已发送（跟踪关闭）',
+          "测算场景": submissionName.slice(0, 100) || subject.slice(0, 100),
+          "设备环境 (UserAgent)": '',
+          "设备尺寸": ''
+        }
+      });
+
+      return res.json({
+        success: true,
+        tracking_enabled: trackingEnabled,
+        tracking_id: trackingEnabled ? trackingId : null
+      });
+    } catch (error) {
+      console.error('[Email Send Error]', error.code || error.message);
+      return res.status(502).json({
+        error: 'Email Send Failed',
+        message: `邮件发送失败：${error.code || 'SMTP_ERROR'}`
+      });
+    } finally {
+      if (typeof transporter.close === 'function') {
+        transporter.close();
+      }
+    }
+  });
 });
 
 // POST API to log visit events from client browser
