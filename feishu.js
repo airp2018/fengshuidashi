@@ -273,27 +273,32 @@ async function findSentEmailEvents() {
   const headers = { 'Authorization': `Bearer ${token}` };
 
   async function searchByEventType(eventType) {
-    const res = await requestFeishu({
-      path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/search?page_size=100`,
-      method: 'POST',
-      headers
-    }, {
-      filter: {
-        conjunction: 'and',
-        conditions: [
-          {
-            field_name: '事件类型',
-            operator: 'is',
-            value: [eventType]
-          }
-        ]
-      }
-    });
+    return collectPaginatedRecords(async pageToken => {
+      const pageTokenQuery = pageToken
+        ? `&page_token=${encodeURIComponent(pageToken)}`
+        : '';
+      const res = await requestFeishu({
+        path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/search?page_size=100${pageTokenQuery}`,
+        method: 'POST',
+        headers
+      }, {
+        filter: {
+          conjunction: 'and',
+          conditions: [
+            {
+              field_name: '事件类型',
+              operator: 'is',
+              value: [eventType]
+            }
+          ]
+        }
+      });
 
-    if (res.code !== 0) {
-      throw new Error(`查询已发送邮件失败: ${res.msg}`);
-    }
-    return res.data?.items || [];
+      if (res.code !== 0) {
+        throw new Error(`查询已发送邮件失败: ${res.msg}`);
+      }
+      return res.data || {};
+    });
   }
 
   const [trackingEnabled, trackingDisabled] = await Promise.all([
@@ -301,6 +306,19 @@ async function findSentEmailEvents() {
     searchByEventType('投稿邮件已发送（跟踪关闭）')
   ]);
   return [...trackingEnabled, ...trackingDisabled];
+}
+
+async function collectPaginatedRecords(fetchPage) {
+  const records = [];
+  let pageToken = '';
+
+  while (true) {
+    const page = await fetchPage(pageToken);
+    records.push(...(page.items || []));
+    if (!page.has_more) return records;
+    pageToken = String(page.page_token || '');
+    if (!pageToken) throw new Error('飞书分页响应缺少 page_token。');
+  }
 }
 
 function isSentRecordOwnedByAccount(record, accountId, legacyAccountId) {
@@ -374,6 +392,7 @@ module.exports = {
   addOrUpdatePendingClaim,
   checkUnlockStatus,
   batchInsertLogs,
+  collectPaginatedRecords,
   findEmailTrackingEvents,
   findSentEmailEvents,
   deleteEmailHistory,
