@@ -28,7 +28,7 @@ test('builds a 163 SMTP configuration without exposing custom fields', () => {
     provider: '163',
     provider_label: '163邮箱',
     host: 'smtp.163.com',
-    port: 465,
+    port: 994,
     secure: true,
     user: 'airp@163.com',
     pass: 'secret'
@@ -45,14 +45,14 @@ test('rejects account setup without an authorization code', () => {
 test('uses Nodemailer defaults instead of cutting off slow SMTP delivery', () => {
   const options = buildSmtpTransportOptions({
     host: 'smtp.163.com',
-    port: 465,
+    port: 994,
     secure: true,
     user: 'airp@163.com',
     pass: 'secret'
   });
 
   assert.equal(options.host, 'smtp.163.com');
-  assert.equal(options.port, 465);
+  assert.equal(options.port, 994);
   assert.equal(options.secure, true);
   assert.equal(options.socketTimeout, undefined);
   assert.equal(options.connectionTimeout, undefined);

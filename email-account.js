@@ -3,7 +3,7 @@
 const crypto = require('crypto');
 
 const SMTP_PRESETS = Object.freeze({
-  '163': { label: '163邮箱', host: 'smtp.163.com', port: 465, secure: true },
+  '163': { label: '163邮箱', host: 'smtp.163.com', port: 994, secure: true },
   '126': { label: '126邮箱', host: 'smtp.126.com', port: 465, secure: true },
   qq: { label: 'QQ邮箱', host: 'smtp.qq.com', port: 465, secure: true },
   sina: { label: '新浪邮箱', host: 'smtp.sina.com', port: 465, secure: true },

@@ -1202,29 +1202,6 @@ function getSmtpErrorDetails(error) {
   };
 }
 
-async function runLegacySmtpDiagnostic() {
-  const smtp = getSmtpConfig();
-  if (!smtp.user || !smtp.pass) {
-    console.log('[SMTP Startup Diagnostic] skipped: legacy SMTP environment is incomplete');
-    return;
-  }
-
-  const transporter = createSmtpTransport(smtp);
-  try {
-    await transporter.verify();
-    console.log('[SMTP Startup Diagnostic] success', {
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      user_domain: smtp.user.split('@')[1] || ''
-    });
-  } catch (error) {
-    console.error('[SMTP Startup Diagnostic] failed', getSmtpErrorDetails(error));
-  } finally {
-    if (typeof transporter.close === 'function') transporter.close();
-  }
-}
-
 function getSafeEmailAccount(session) {
   return {
     account_id: session.accountId,
@@ -1720,7 +1697,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  PC 端访问: http://localhost:${PORT}`);
   console.log(`  手机端访问: 请连接热点，访问 http://192.168.137.1:${PORT}`);
   console.log(`======================================================\n`);
-  runLegacySmtpDiagnostic().catch(error => {
-    console.error('[SMTP Startup Diagnostic] unexpected failure', getSmtpErrorDetails(error));
-  });
 });
