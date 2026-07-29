@@ -1275,9 +1275,11 @@ app.get('/api/email/status', (req, res) => {
   if (!authorizeEmailAdmin(req, res)) return;
 
   const smtp = getSmtpConfig();
+  const senderName = String(process.env.SMTP_SENDER_NAME || '颜桥').trim();
   return res.json({
     smtp_configured: Boolean(smtp.user && smtp.pass),
-    sender: smtp.user || null
+    sender: smtp.user || null,
+    sender_name: senderName || '颜桥'
   });
 });
 
@@ -1331,6 +1333,27 @@ app.get('/api/email/sent', async (req, res) => {
   }
 });
 
+app.delete('/api/email/sent', async (req, res) => {
+  if (!authorizeEmailAdmin(req, res)) return;
+
+  try {
+    const result = await feishu.deleteEmailHistory();
+    recentSentEmails.length = 0;
+    emailOpenEvents.clear();
+    for (let index = logQueue.length - 1; index >= 0; index -= 1) {
+      const deviceId = String(logQueue[index]?.fields?.['设备 ID'] || '');
+      if (deviceId.startsWith('email:')) logQueue.splice(index, 1);
+    }
+    return res.json({ success: true, deleted_count: result.deleted_count });
+  } catch (error) {
+    console.error('[Email History Delete Error]', error.message);
+    return res.status(502).json({
+      error: 'Email History Delete Failed',
+      message: '清空发送记录失败，请稍后再试。'
+    });
+  }
+});
+
 // Send a multipart text + HTML email and append an optional invisible tracking pixel.
 app.post('/api/email/send', (req, res) => {
   if (!authorizeEmailAdmin(req, res)) return;
@@ -1348,7 +1371,7 @@ app.post('/api/email/send', (req, res) => {
     const subject = String(req.body.subject || '').trim();
     const body = String(req.body.body || '');
     const submissionName = String(req.body.submission_name || '').trim();
-    const senderName = String(process.env.SMTP_SENDER_NAME || req.body.sender_name || '投稿邮箱')
+    const senderName = String(process.env.SMTP_SENDER_NAME || req.body.sender_name || '颜桥')
       .trim()
       .slice(0, 60);
     const trackingEnabled = String(req.body.tracking_enabled || 'true') !== 'false';
@@ -1408,7 +1431,7 @@ app.post('/api/email/send', (req, res) => {
     try {
       await transporter.sendMail({
         from: {
-          name: senderName || '投稿邮箱',
+          name: senderName || '颜桥',
           address: smtp.user
         },
         to: recipient,

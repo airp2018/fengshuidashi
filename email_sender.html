@@ -246,6 +246,11 @@
       background: #fff;
     }
 
+    .danger-button {
+      color: #b42318;
+      border-color: #f0b8b3;
+    }
+
     .form-row {
       display: grid;
       grid-template-columns: 84px minmax(0, 1fr);
@@ -668,6 +673,7 @@
           <div class="toolbar">
             <button id="backComposeButton" class="secondary-button" type="button">写信</button>
             <button id="refreshSentButton" class="secondary-button" type="button">刷新列表</button>
+            <button id="clearSentButton" class="secondary-button danger-button" type="button">清空记录</button>
           </div>
           <div class="sent-content">
             <div class="sent-note">打开状态不会自动查询。需要时点击对应邮件右侧的“查询”，即使一个月后也可以。</div>
@@ -730,12 +736,45 @@
     const sentNav = document.getElementById('sentNav');
     const sentView = document.getElementById('sentView');
     const refreshSentButton = document.getElementById('refreshSentButton');
+    const clearSentButton = document.getElementById('clearSentButton');
     const sentTableWrap = document.getElementById('sentTableWrap');
     const sentTableBody = document.getElementById('sentTableBody');
     const sentEmpty = document.getElementById('sentEmpty');
 
     let sessionPassword = sessionStorage.getItem('emailAdminPassword') || '';
     let smtpConfigured = false;
+    const trackingStatusCacheKey = 'emailTrackingStatusV1';
+
+    function readTrackingStatusCache() {
+      try {
+        return JSON.parse(localStorage.getItem(trackingStatusCacheKey) || '{}');
+      } catch {
+        return {};
+      }
+    }
+
+    function saveTrackingStatus(trackingId, status) {
+      const cache = readTrackingStatusCache();
+      cache[trackingId] = status;
+      localStorage.setItem(trackingStatusCacheKey, JSON.stringify(cache));
+    }
+
+    function applyTrackingStatus(data, statusCell) {
+      if (data.tracking_state === 'possible_human' || data.opened) {
+        statusCell.textContent = data.last_opened_at
+          ? `已打开 · ${data.last_opened_at}`
+          : '已打开';
+        statusCell.className = 'sent-status opened';
+      } else if (data.tracking_state === 'mail_system_loaded' || data.suspected_automated_count > 0) {
+        statusCell.textContent = data.last_suspected_at
+          ? `邮箱系统已加载 · ${data.last_suspected_at}`
+          : '邮箱系统已加载';
+        statusCell.className = 'sent-status opened';
+      } else {
+        statusCell.textContent = '暂未检测到图片加载';
+        statusCell.className = 'sent-status pending';
+      }
+    }
 
     function showMessage(text, type) {
       message.textContent = text;
@@ -791,31 +830,20 @@
           throw new Error(data.message || '查询失败');
         }
 
-        if (data.tracking_state === 'possible_human' || data.opened) {
-          statusCell.textContent = data.last_opened_at
-            ? `已打开 · ${data.last_opened_at}`
-            : '已打开';
-          statusCell.className = 'sent-status opened';
-        } else if (data.tracking_state === 'mail_system_loaded' || data.suspected_automated_count > 0) {
-          statusCell.textContent = data.last_suspected_at
-            ? `邮箱系统已加载 · ${data.last_suspected_at}`
-            : '邮箱系统已加载';
-          statusCell.className = 'sent-status opened';
-        } else {
-          statusCell.textContent = '暂未检测到图片加载';
-          statusCell.className = 'sent-status pending';
-        }
+        saveTrackingStatus(item.tracking_id, data);
+        applyTrackingStatus(data, statusCell);
       } catch (error) {
         statusCell.textContent = error.message;
         statusCell.className = 'sent-status pending';
       } finally {
         button.disabled = false;
-        button.textContent = '查询';
+        button.textContent = '重新查询';
       }
     }
 
     function renderSentEmails(items) {
       sentTableBody.replaceChildren();
+      const trackingStatusCache = readTrackingStatusCache();
 
       if (!items.length) {
         sentTableWrap.classList.add('hidden');
@@ -843,10 +871,12 @@
         trackingCell.className = 'tracking-code';
         statusCell.textContent = item.tracking_enabled ? '尚未查询' : '未启用跟踪';
         statusCell.className = 'sent-status';
+        const cachedStatus = item.tracking_id ? trackingStatusCache[item.tracking_id] : null;
+        if (cachedStatus) applyTrackingStatus(cachedStatus, statusCell);
 
         queryButton.type = 'button';
         queryButton.className = 'secondary-button';
-        queryButton.textContent = '查询';
+        queryButton.textContent = cachedStatus ? '重新查询' : '查询';
         queryButton.disabled = !item.tracking_enabled;
         queryButton.addEventListener('click', () => {
           querySentTracking(item, statusCell, queryButton);
@@ -893,6 +923,35 @@
       }
     }
 
+    async function clearSentEmails() {
+      const confirmed = window.confirm(
+        '确定清空全部发送和跟踪记录吗？此操作不可恢复，但不会撤回已经发出的邮件。'
+      );
+      if (!confirmed) return;
+
+      clearSentButton.disabled = true;
+      clearSentButton.textContent = '清空中…';
+      try {
+        const response = await fetch('/api/email/sent', {
+          method: 'DELETE',
+          headers: { Authorization: sessionPassword }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || '清空发送记录失败。');
+        }
+        localStorage.removeItem(trackingStatusCacheKey);
+        renderSentEmails([]);
+        sentEmpty.textContent = `已清空 ${data.deleted_count || 0} 条邮件记录。`;
+      } catch (error) {
+        sentEmpty.classList.remove('hidden');
+        sentEmpty.textContent = error.message;
+      } finally {
+        clearSentButton.disabled = false;
+        clearSentButton.textContent = '清空记录';
+      }
+    }
+
     function showSentView() {
       emailForm.classList.add('hidden');
       sentView.classList.remove('hidden');
@@ -915,7 +974,9 @@
       sessionStorage.setItem('emailAdminPassword', password);
       smtpConfigured = Boolean(data.smtp_configured);
       authOverlay.classList.add('hidden');
-      accountLabel.textContent = data.sender || 'SMTP 尚未配置';
+      accountLabel.textContent = data.sender
+        ? `${data.sender_name || '颜桥'}（${data.sender}）`
+        : 'SMTP 尚未配置';
 
       if (smtpConfigured) {
         setConnection('ready', `${data.sender} 已连接`);
@@ -1004,6 +1065,7 @@
     sentToolbarButton.addEventListener('click', showSentView);
     backComposeButton.addEventListener('click', showComposeView);
     refreshSentButton.addEventListener('click', loadSentEmails);
+    clearSentButton.addEventListener('click', clearSentEmails);
 
     if (sessionPassword) {
       checkStatus(sessionPassword).catch(() => {

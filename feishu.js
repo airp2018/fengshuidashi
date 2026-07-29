@@ -303,6 +303,56 @@ async function findSentEmailEvents() {
   return [...trackingEnabled, ...trackingDisabled];
 }
 
+async function deleteEmailHistory() {
+  const token = await getTenantToken();
+  const tableId = await getOrCreateLogsTable(token);
+  const headers = { 'Authorization': `Bearer ${token}` };
+  const eventTypes = [
+    '投稿邮件已发送（跟踪开启）',
+    '投稿邮件已发送（跟踪关闭）',
+    '邮件跟踪像素加载'
+  ];
+  const groups = await Promise.all(eventTypes.map(async eventType => {
+    const res = await requestFeishu({
+      path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/search?page_size=500`,
+      method: 'POST',
+      headers
+    }, {
+      filter: {
+        conjunction: 'and',
+        conditions: [
+          {
+            field_name: '事件类型',
+            operator: 'is',
+            value: [eventType]
+          }
+        ]
+      }
+    });
+
+    if (res.code !== 0) {
+      throw new Error(`查询待删除邮件记录失败: ${res.msg}`);
+    }
+    return res.data?.items || [];
+  }));
+  const recordIds = [...new Set(
+    groups.flat().map(record => record.record_id).filter(Boolean)
+  )];
+
+  for (const recordId of recordIds) {
+    const res = await requestFeishu({
+      path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/${recordId}`,
+      method: 'DELETE',
+      headers
+    });
+    if (res.code !== 0) {
+      throw new Error(`删除邮件记录失败: ${res.msg}`);
+    }
+  }
+
+  return { deleted_count: recordIds.length };
+}
+
 async function updateClaimStatusInFeishu(clientUuid, status) {
   const token = await getTenantToken();
   const existingRecord = await findRecordByUuid(token, clientUuid);
@@ -333,5 +383,6 @@ module.exports = {
   batchInsertLogs,
   findEmailTrackingEvents,
   findSentEmailEvents,
+  deleteEmailHistory,
   updateClaimStatusInFeishu
 };
