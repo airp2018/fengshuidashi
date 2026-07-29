@@ -3,7 +3,6 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const feishu = require('./feishu');
-const { createEmailRouter } = require('./email/router');
 
 // Concurrency locks to prevent double-click duplicate entries
 const activeClaims = new Set();
@@ -1121,7 +1120,11 @@ app.get('/api/client-limit', async (req, res) => {
 });
 
 const logQueue = [];
-app.use(createEmailRouter({ feishu, getAdminPassword, logQueue }));
+const emailRouterPath = path.join(__dirname, 'email', 'router.js');
+if (fs.existsSync(emailRouterPath)) {
+  const { createEmailRouter } = require(emailRouterPath);
+  app.use(createEmailRouter({ feishu, getAdminPassword, logQueue }));
+}
 
 // Lightweight endpoint for uptime checks. Keep this separate from tracking routes.
 app.get('/health', (req, res) => {
