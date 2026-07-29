@@ -949,7 +949,10 @@
         const trackingText = data.tracking_enabled
           ? `\n跟踪编号：${data.tracking_id}`
           : '\n本封邮件未启用打开跟踪。';
-        showMessage(`邮件已成功交给 163 SMTP 发送。${trackingText}`, 'success');
+        const historyText = data.history_saved === false
+          ? '\n发送记录暂存于服务器，后台会继续补存。'
+          : '\n发送记录已保存到历史列表。';
+        showMessage(`邮件已成功交给 163 SMTP 发送。${trackingText}${historyText}`, 'success');
         emailForm.reset();
         trackingEnabled.checked = true;
         renderFiles();

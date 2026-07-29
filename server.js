@@ -1430,16 +1430,24 @@ app.post('/api/email/send', (req, res) => {
           "设备尺寸": ''
         }
       };
-      logQueue.push({ fields: sentLogRecord.fields });
       recentSentEmails.unshift(sentLogRecord);
       if (recentSentEmails.length > 100) {
         recentSentEmails.length = 100;
+      }
+      let historySaved = false;
+      try {
+        await feishu.batchInsertLogs([{ fields: sentLogRecord.fields }]);
+        historySaved = true;
+      } catch (historyError) {
+        console.error('[Sent Email History Error]', historyError.message);
+        logQueue.push({ fields: sentLogRecord.fields });
       }
 
       return res.json({
         success: true,
         tracking_enabled: trackingEnabled,
-        tracking_id: trackingEnabled ? trackingId : null
+        tracking_id: trackingEnabled ? trackingId : null,
+        history_saved: historySaved
       });
     } catch (error) {
       console.error('[Email Send Error]', error.code || error.message);
