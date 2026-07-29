@@ -139,12 +139,16 @@
     }
 
     .nav-item {
+      width: 100%;
       display: flex;
       align-items: center;
       gap: 10px;
       padding: 9px 12px;
       color: #4c535b;
+      border: 0;
       border-radius: 6px;
+      background: transparent;
+      text-align: left;
     }
 
     .nav-item.active {
@@ -394,55 +398,74 @@
       background: #fff0ef;
     }
 
-    .tracking-panel {
-      margin: 0 20px 20px;
-      padding: 15px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fbfbfc;
+    .hidden {
+      display: none !important;
     }
 
-    .tracking-panel-title {
-      margin-bottom: 10px;
+    .sent-content {
+      padding: 20px;
+    }
+
+    .sent-note {
+      margin-bottom: 14px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .sent-table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .sent-table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+    }
+
+    .sent-table th,
+    .sent-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .sent-table th {
+      color: var(--muted);
+      background: #f7f8fa;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .sent-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .tracking-code {
+      color: #555c64;
+      font: 12px/1.4 Consolas, monospace;
+    }
+
+    .sent-status {
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .sent-status.opened {
+      color: var(--success);
       font-weight: 700;
     }
 
-    .tracking-controls {
-      display: flex;
-      gap: 8px;
-    }
-
-    .tracking-controls input {
-      min-width: 0;
-      flex: 1;
-      padding: 9px 11px;
-      border: 1px solid #d7dade;
-      border-radius: 6px;
-      outline: none;
-    }
-
-    .tracking-result {
-      margin-top: 11px;
-      padding: 10px 12px;
-      color: var(--muted);
-      border-radius: 6px;
-      background: #f0f1f3;
-    }
-
-    .tracking-result.opened {
-      color: var(--success);
-      background: #e8f7ef;
-    }
-
-    .tracking-result.pending {
+    .sent-status.pending {
       color: var(--warning);
-      background: #fff6e5;
     }
 
-    .tracking-disclaimer {
-      margin-top: 7px;
+    .sent-empty {
+      padding: 48px 20px;
       color: var(--muted);
-      font-size: 12px;
+      text-align: center;
     }
 
     .auth-overlay {
@@ -569,11 +592,10 @@
 
     <div class="layout">
       <aside class="sidebar">
-        <button class="compose-nav" type="button">✎ 写信</button>
+        <button id="composeButton" class="compose-nav" type="button">✎ 写信</button>
         <nav class="nav-list" aria-label="邮箱导航">
-          <div class="nav-item active">▣ 正在写信</div>
-          <div class="nav-item">□ 已发送</div>
-          <div class="nav-item">◉ 跟踪记录</div>
+          <button id="composeNav" class="nav-item active" type="button">▣ 正在写信</button>
+          <button id="sentNav" class="nav-item" type="button">□ 已发送</button>
         </nav>
       </aside>
 
@@ -590,6 +612,7 @@
           <div class="toolbar">
             <button id="sendButton" class="send-button" type="submit">发送</button>
             <button id="clearButton" class="secondary-button" type="button">清空</button>
+            <button id="sentToolbarButton" class="secondary-button" type="button">已发送</button>
           </div>
 
           <div class="form-row">
@@ -600,16 +623,6 @@
           <div class="form-row">
             <label for="subject">主题</label>
             <input id="subject" name="subject" type="text" maxlength="200" required placeholder="请输入邮件主题">
-          </div>
-
-          <div class="form-row">
-            <label for="submissionName">投稿名称</label>
-            <input id="submissionName" name="submission_name" type="text" maxlength="100" placeholder="用于你自己在跟踪记录中辨认">
-          </div>
-
-          <div class="form-row">
-            <label for="senderName">发件人名称</label>
-            <input id="senderName" name="sender_name" type="text" maxlength="60" value="投稿邮箱">
           </div>
 
           <div class="form-row attachment-row">
@@ -638,17 +651,38 @@
           </div>
 
           <div id="message" class="message" role="status"></div>
-
-          <section class="tracking-panel" aria-label="邮件打开状态">
-            <div class="tracking-panel-title">打开跟踪</div>
-            <div class="tracking-controls">
-              <input id="trackingIdInput" type="text" placeholder="发送后会自动填入跟踪编号" autocomplete="off">
-              <button id="checkTrackingButton" class="secondary-button" type="button">刷新状态</button>
-            </div>
-            <div id="trackingResult" class="tracking-result">尚未选择跟踪邮件。</div>
-            <div class="tracking-disclaimer">“已打开”只说明邮箱加载过邮件中的图片，可用于确认邮件有效，不代表对方完整阅读。</div>
-          </section>
         </form>
+
+        <section id="sentView" class="composer hidden" aria-label="已发送邮件">
+          <div class="composer-header">
+            <div class="composer-title">已发送</div>
+            <div class="connection">
+              <span>最多显示最近 100 封</span>
+            </div>
+          </div>
+          <div class="toolbar">
+            <button id="backComposeButton" class="secondary-button" type="button">写信</button>
+            <button id="refreshSentButton" class="secondary-button" type="button">刷新列表</button>
+          </div>
+          <div class="sent-content">
+            <div class="sent-note">打开状态不会自动查询。需要时点击对应邮件右侧的“查询”，即使一个月后也可以。</div>
+            <div id="sentTableWrap" class="sent-table-wrap hidden">
+              <table class="sent-table">
+                <thead>
+                  <tr>
+                    <th>发送时间</th>
+                    <th>邮件名称</th>
+                    <th>跟踪编号</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="sentTableBody"></tbody>
+              </table>
+            </div>
+            <div id="sentEmpty" class="sent-empty">点击“已发送”读取发送记录。</div>
+          </div>
+        </section>
       </main>
     </div>
   </div>
@@ -677,18 +711,24 @@
     const accountLabel = document.getElementById('accountLabel');
     const sendButton = document.getElementById('sendButton');
     const clearButton = document.getElementById('clearButton');
+    const sentToolbarButton = document.getElementById('sentToolbarButton');
+    const backComposeButton = document.getElementById('backComposeButton');
     const logoutButton = document.getElementById('logoutButton');
     const attachments = document.getElementById('attachments');
     const fileList = document.getElementById('fileList');
     const message = document.getElementById('message');
     const trackingEnabled = document.getElementById('trackingEnabled');
-    const trackingIdInput = document.getElementById('trackingIdInput');
-    const checkTrackingButton = document.getElementById('checkTrackingButton');
-    const trackingResult = document.getElementById('trackingResult');
+    const composeButton = document.getElementById('composeButton');
+    const composeNav = document.getElementById('composeNav');
+    const sentNav = document.getElementById('sentNav');
+    const sentView = document.getElementById('sentView');
+    const refreshSentButton = document.getElementById('refreshSentButton');
+    const sentTableWrap = document.getElementById('sentTableWrap');
+    const sentTableBody = document.getElementById('sentTableBody');
+    const sentEmpty = document.getElementById('sentEmpty');
 
     let sessionPassword = sessionStorage.getItem('emailAdminPassword') || '';
     let smtpConfigured = false;
-    const trackingCheckInterval = 8 * 60 * 60 * 1000;
 
     function showMessage(text, type) {
       message.textContent = text;
@@ -720,59 +760,121 @@
       });
     }
 
-    function setTrackingResult(text, state) {
-      trackingResult.textContent = text;
-      trackingResult.className = `tracking-result ${state || ''}`.trim();
+    function showComposeView() {
+      emailForm.classList.remove('hidden');
+      sentView.classList.add('hidden');
+      composeNav.classList.add('active');
+      sentNav.classList.remove('active');
     }
 
-    async function checkTracking() {
-      const trackingId = trackingIdInput.value.trim();
-      if (!trackingId) {
-        setTrackingResult('请先输入跟踪编号。', 'pending');
-        return;
-      }
+    async function querySentTracking(item, statusCell, button) {
+      if (!item.tracking_enabled || !item.tracking_id) return;
 
-      checkTrackingButton.disabled = true;
-      checkTrackingButton.textContent = '查询中…';
+      button.disabled = true;
+      button.textContent = '查询中…';
+      statusCell.textContent = '正在查询';
+      statusCell.className = 'sent-status';
 
       try {
-        const response = await fetch(`/api/email/tracking/${encodeURIComponent(trackingId)}`, {
+        const response = await fetch(`/api/email/tracking/${encodeURIComponent(item.tracking_id)}`, {
           headers: { Authorization: sessionPassword }
         });
         const data = await response.json().catch(() => ({}));
-
         if (!response.ok) {
-          throw new Error(data.message || '跟踪状态查询失败。');
+          throw new Error(data.message || '查询失败');
         }
-
-        localStorage.setItem('lastEmailTrackingId', trackingId);
-        localStorage.setItem('lastEmailTrackingCheckAt', String(Date.now()));
 
         if (data.opened) {
-          const timeText = data.last_opened_at ? `；最近打开：${data.last_opened_at}` : '';
-          setTrackingResult(`已打开 · 邮件有效${timeText}`, 'opened');
+          statusCell.textContent = data.last_opened_at
+            ? `已打开 · ${data.last_opened_at}`
+            : '已打开 · 邮件有效';
+          statusCell.className = 'sent-status opened';
         } else {
-          setTrackingResult('暂未检测到打开。邮件可能尚未打开，或对方邮箱拦截了外部图片。', 'pending');
+          statusCell.textContent = '暂未检测到打开';
+          statusCell.className = 'sent-status pending';
         }
       } catch (error) {
-        setTrackingResult(error.message, 'pending');
+        statusCell.textContent = error.message;
+        statusCell.className = 'sent-status pending';
       } finally {
-        checkTrackingButton.disabled = false;
-        checkTrackingButton.textContent = '刷新状态';
+        button.disabled = false;
+        button.textContent = '查询';
       }
     }
 
-    function restoreTrackingStatus() {
-      const trackingId = localStorage.getItem('lastEmailTrackingId') || '';
-      if (!trackingId) return;
+    function renderSentEmails(items) {
+      sentTableBody.replaceChildren();
 
-      trackingIdInput.value = trackingId;
-      const lastCheckedAt = Number(localStorage.getItem('lastEmailTrackingCheckAt') || 0);
-      if (Date.now() - lastCheckedAt >= trackingCheckInterval) {
-        checkTracking();
-      } else {
-        setTrackingResult('已载入上次跟踪邮件。点击“刷新状态”可立即查询。');
+      if (!items.length) {
+        sentTableWrap.classList.add('hidden');
+        sentEmpty.classList.remove('hidden');
+        sentEmpty.textContent = '还没有发送记录。';
+        return;
       }
+
+      items.forEach(item => {
+        const row = document.createElement('tr');
+        const sentAtCell = document.createElement('td');
+        const nameCell = document.createElement('td');
+        const trackingCell = document.createElement('td');
+        const statusCell = document.createElement('td');
+        const actionCell = document.createElement('td');
+        const queryButton = document.createElement('button');
+
+        sentAtCell.textContent = item.sent_at || '时间未知';
+        nameCell.textContent = item.email_name || '未命名邮件';
+        trackingCell.textContent = item.tracking_id || '未启用跟踪';
+        trackingCell.className = 'tracking-code';
+        statusCell.textContent = item.tracking_enabled ? '尚未查询' : '未启用跟踪';
+        statusCell.className = 'sent-status';
+
+        queryButton.type = 'button';
+        queryButton.className = 'secondary-button';
+        queryButton.textContent = '查询';
+        queryButton.disabled = !item.tracking_enabled;
+        queryButton.addEventListener('click', () => {
+          querySentTracking(item, statusCell, queryButton);
+        });
+
+        actionCell.appendChild(queryButton);
+        row.append(sentAtCell, nameCell, trackingCell, statusCell, actionCell);
+        sentTableBody.appendChild(row);
+      });
+
+      sentEmpty.classList.add('hidden');
+      sentTableWrap.classList.remove('hidden');
+    }
+
+    async function loadSentEmails() {
+      refreshSentButton.disabled = true;
+      refreshSentButton.textContent = '读取中…';
+      sentTableWrap.classList.add('hidden');
+      sentEmpty.classList.remove('hidden');
+      sentEmpty.textContent = '正在读取已发送邮件…';
+
+      try {
+        const response = await fetch('/api/email/sent', {
+          headers: { Authorization: sessionPassword }
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || '读取已发送列表失败。');
+        }
+        renderSentEmails(data.items || []);
+      } catch (error) {
+        sentEmpty.textContent = error.message;
+      } finally {
+        refreshSentButton.disabled = false;
+        refreshSentButton.textContent = '刷新列表';
+      }
+    }
+
+    function showSentView() {
+      emailForm.classList.add('hidden');
+      sentView.classList.remove('hidden');
+      composeNav.classList.remove('active');
+      sentNav.classList.add('active');
+      loadSentEmails();
     }
 
     async function checkStatus(password) {
@@ -794,7 +896,6 @@
       if (smtpConfigured) {
         setConnection('ready', `${data.sender} 已连接`);
         hideMessage();
-        restoreTrackingStatus();
       } else {
         setConnection('warning', 'SMTP 授权码尚未配置');
         showMessage('页面已经可用，但发送前还需在 Render 环境变量中配置 SMTP_USER 和 SMTP_AUTH_CODE。', 'warning');
@@ -845,15 +946,8 @@
           : '\n本封邮件未启用打开跟踪。';
         showMessage(`邮件已成功交给 163 SMTP 发送。${trackingText}`, 'success');
         emailForm.reset();
-        document.getElementById('senderName').value = '投稿邮箱';
         trackingEnabled.checked = true;
         renderFiles();
-        if (data.tracking_enabled) {
-          trackingIdInput.value = data.tracking_id;
-          localStorage.setItem('lastEmailTrackingId', data.tracking_id);
-          localStorage.removeItem('lastEmailTrackingCheckAt');
-          setTrackingResult('等待对方邮箱加载跟踪图片。稍后可刷新状态。', 'pending');
-        }
       } catch (error) {
         showMessage(error.message, 'error');
       } finally {
@@ -864,10 +958,8 @@
 
     clearButton.addEventListener('click', () => {
       emailForm.reset();
-      document.getElementById('senderName').value = '投稿邮箱';
       trackingEnabled.checked = true;
       renderFiles();
-      trackingIdInput.value = localStorage.getItem('lastEmailTrackingId') || '';
       hideMessage();
     });
 
@@ -879,7 +971,12 @@
     });
 
     attachments.addEventListener('change', renderFiles);
-    checkTrackingButton.addEventListener('click', checkTracking);
+    composeButton.addEventListener('click', showComposeView);
+    composeNav.addEventListener('click', showComposeView);
+    sentNav.addEventListener('click', showSentView);
+    sentToolbarButton.addEventListener('click', showSentView);
+    backComposeButton.addEventListener('click', showComposeView);
+    refreshSentButton.addEventListener('click', loadSentEmails);
 
     if (sessionPassword) {
       checkStatus(sessionPassword).catch(() => {

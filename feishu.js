@@ -267,6 +267,42 @@ async function findEmailTrackingEvents(trackingId) {
   return res.data?.items || [];
 }
 
+async function findSentEmailEvents() {
+  const token = await getTenantToken();
+  const tableId = await getOrCreateLogsTable(token);
+  const headers = { 'Authorization': `Bearer ${token}` };
+
+  async function searchByEventType(eventType) {
+    const res = await requestFeishu({
+      path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/search?page_size=100`,
+      method: 'POST',
+      headers
+    }, {
+      filter: {
+        conjunction: 'and',
+        conditions: [
+          {
+            field_name: '事件类型',
+            operator: 'is',
+            value: [eventType]
+          }
+        ]
+      }
+    });
+
+    if (res.code !== 0) {
+      throw new Error(`查询已发送邮件失败: ${res.msg}`);
+    }
+    return res.data?.items || [];
+  }
+
+  const [trackingEnabled, trackingDisabled] = await Promise.all([
+    searchByEventType('投稿邮件已发送（跟踪开启）'),
+    searchByEventType('投稿邮件已发送（跟踪关闭）')
+  ]);
+  return [...trackingEnabled, ...trackingDisabled];
+}
+
 async function updateClaimStatusInFeishu(clientUuid, status) {
   const token = await getTenantToken();
   const existingRecord = await findRecordByUuid(token, clientUuid);
@@ -296,5 +332,6 @@ module.exports = {
   checkUnlockStatus,
   batchInsertLogs,
   findEmailTrackingEvents,
+  findSentEmailEvents,
   updateClaimStatusInFeishu
 };

@@ -7,7 +7,10 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const feishu = require('./feishu');
 const { normalizeUploadFilename } = require('./email-filename');
-const { summarizeEmailOpenEvents } = require('./email-tracking');
+const {
+  summarizeEmailOpenEvents,
+  summarizeSentEmailEvents
+} = require('./email-tracking');
 
 // Concurrency locks to prevent double-click duplicate entries
 const activeClaims = new Set();
@@ -1131,6 +1134,7 @@ app.get('/api/client-limit', async (req, res) => {
 
 const logQueue = [];
 const emailOpenEvents = new Map();
+const recentSentEmails = [];
 const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
@@ -1290,6 +1294,23 @@ app.get('/api/email/tracking/:trackingId', async (req, res) => {
   }
 });
 
+app.get('/api/email/sent', async (req, res) => {
+  if (!authorizeEmailAdmin(req, res)) return;
+
+  try {
+    const persisted = await feishu.findSentEmailEvents();
+    return res.json({
+      items: summarizeSentEmailEvents([...recentSentEmails, ...persisted], 100)
+    });
+  } catch (error) {
+    console.error('[Sent Email Query Error]', error.message);
+    return res.status(502).json({
+      error: 'Sent Email Query Failed',
+      message: '暂时无法读取已发送列表，请稍后再试。'
+    });
+  }
+});
+
 // Send a multipart text + HTML email and append an optional invisible tracking pixel.
 app.post('/api/email/send', (req, res) => {
   if (!authorizeEmailAdmin(req, res)) return;
@@ -1306,7 +1327,9 @@ app.post('/api/email/send', (req, res) => {
     const subject = String(req.body.subject || '').trim();
     const body = String(req.body.body || '');
     const submissionName = String(req.body.submission_name || '').trim();
-    const senderName = String(req.body.sender_name || '投稿邮箱').trim().slice(0, 60);
+    const senderName = String(process.env.SMTP_SENDER_NAME || req.body.sender_name || '投稿邮箱')
+      .trim()
+      .slice(0, 60);
     const trackingEnabled = String(req.body.tracking_enabled || 'true') !== 'false';
     const attachments = req.files || [];
     const totalAttachmentBytes = attachments.reduce((sum, file) => sum + file.size, 0);
@@ -1374,7 +1397,8 @@ app.post('/api/email/send', (req, res) => {
         }))
       });
 
-      logQueue.push({
+      const sentLogRecord = {
+        created_time: String(Date.now()),
         fields: {
           "设备 ID": `email:${trackingId}`,
           "IP 地址": '未记录',
@@ -1384,7 +1408,12 @@ app.post('/api/email/send', (req, res) => {
           "设备环境 (UserAgent)": '',
           "设备尺寸": ''
         }
-      });
+      };
+      logQueue.push({ fields: sentLogRecord.fields });
+      recentSentEmails.unshift(sentLogRecord);
+      if (recentSentEmails.length > 100) {
+        recentSentEmails.length = 100;
+      }
 
       return res.json({
         success: true,
