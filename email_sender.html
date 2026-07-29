@@ -793,8 +793,8 @@
 
         if (data.tracking_state === 'possible_human' || data.opened) {
           statusCell.textContent = data.last_opened_at
-            ? `后续再次加载 · ${data.last_opened_at}（可能人工打开）`
-            : '后续再次加载（可能人工打开）';
+            ? `已打开 · ${data.last_opened_at}`
+            : '已打开';
           statusCell.className = 'sent-status opened';
         } else if (data.tracking_state === 'mail_system_loaded' || data.suspected_automated_count > 0) {
           statusCell.textContent = data.last_suspected_at
