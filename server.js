@@ -1208,7 +1208,11 @@ function getPublicBaseUrl(req) {
 
 // Lightweight endpoint for uptime checks. Keep this separate from tracking routes.
 app.get('/health', (req, res) => {
-  res.status(200).type('text/plain').send('OK');
+  res
+    .set('X-App-Revision', String(process.env.RENDER_GIT_COMMIT || 'local').slice(0, 40))
+    .status(200)
+    .type('text/plain')
+    .send('OK');
 });
 
 // Invisible 1x1 email tracking pixel. Each email should use a unique random ID.
