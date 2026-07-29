@@ -51,16 +51,27 @@ function summarizeEmailOpenEvents(records) {
   };
 }
 
+function readBitableText(value) {
+  if (value === null || value === undefined) return '';
+  if (Array.isArray(value)) return value.map(readBitableText).join('');
+  if (typeof value === 'object') {
+    if ('text' in value) return readBitableText(value.text);
+    if ('name' in value) return readBitableText(value.name);
+    return '';
+  }
+  return String(value);
+}
+
 function getSentEmailMetadata(record) {
   try {
-    return JSON.parse(String(record?.fields?.['设备尺寸'] || '{}'));
+    return JSON.parse(readBitableText(record?.fields?.['设备尺寸']) || '{}');
   } catch {
     return {};
   }
 }
 
 function isSentEmailRecordForAccount(record, accountId, legacyAccountId = '') {
-  const eventType = String(record?.fields?.['事件类型'] || '');
+  const eventType = readBitableText(record?.fields?.['事件类型']);
   if (!eventType.startsWith('投稿邮件已发送')) return false;
   const metadata = getSentEmailMetadata(record);
   const recordAccountId = String(metadata.sender_account_id || legacyAccountId || '');
@@ -71,7 +82,7 @@ function summarizeSentEmailEvents(records, limit = 100, options = {}) {
   const accountId = String(options.account_id || '');
   const legacyAccountId = String(options.legacy_account_id || '');
   const sentRecords = (records || [])
-    .filter(record => String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送'))
+    .filter(record => readBitableText(record?.fields?.['事件类型']).startsWith('投稿邮件已发送'))
     .filter(record => !accountId || isSentEmailRecordForAccount(record, accountId, legacyAccountId))
     .sort((left, right) => Number(right.created_time || 0) - Number(left.created_time || 0));
   const seen = new Set();
@@ -79,20 +90,20 @@ function summarizeSentEmailEvents(records, limit = 100, options = {}) {
 
   for (const record of sentRecords) {
     const fields = record.fields || {};
-    const deviceId = String(fields['设备 ID'] || '');
+    const deviceId = readBitableText(fields['设备 ID']);
     if (!deviceId.startsWith('email:')) continue;
 
     const trackingId = deviceId.slice('email:'.length);
     if (!trackingId || seen.has(trackingId)) continue;
     seen.add(trackingId);
 
-    const trackingEnabled = fields['事件类型'] === '投稿邮件已发送（跟踪开启）';
+    const trackingEnabled = readBitableText(fields['事件类型']) === '投稿邮件已发送（跟踪开启）';
     const metadata = getSentEmailMetadata(record);
     result.push({
-      sent_at: fields['时间'] || null,
+      sent_at: readBitableText(fields['时间']) || null,
       recipient_label: String(metadata.recipient_label || ''),
       recipient_email: String(metadata.recipient_email || ''),
-      email_name: fields['测算场景'] || '未命名邮件',
+      email_name: readBitableText(fields['测算场景']) || '未命名邮件',
       tracking_enabled: trackingEnabled,
       tracking_id: trackingEnabled ? trackingId : null
     });

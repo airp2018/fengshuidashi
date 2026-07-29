@@ -112,6 +112,33 @@ test('keeps sent history isolated by sender account', () => {
   assert.equal(sent[0].recipient_email, 'a@example.com');
 });
 
+test('reads sent history when Feishu returns text fields as rich-text arrays', () => {
+  const asFeishuText = text => [{ type: 'text', text }];
+  const sent = summarizeSentEmailEvents([{
+    created_time: '300',
+    fields: {
+      '设备 ID': asFeishuText('email:persisted-message'),
+      '时间': asFeishuText('2026/7/29 17:53:30'),
+      '事件类型': asFeishuText('投稿邮件已发送（跟踪开启）'),
+      '测算场景': asFeishuText('重新登录后仍应显示'),
+      '设备尺寸': asFeishuText(JSON.stringify({
+        sender_account_id: 'account-a',
+        recipient_label: '钟山',
+        recipient_email: 'tougao@example.com'
+      }))
+    }
+  }], 100, { account_id: 'account-a' });
+
+  assert.deepEqual(sent, [{
+    sent_at: '2026/7/29 17:53:30',
+    recipient_label: '钟山',
+    recipient_email: 'tougao@example.com',
+    email_name: '重新登录后仍应显示',
+    tracking_enabled: true,
+    tracking_id: 'persisted-message'
+  }]);
+});
+
 test('assigns untagged legacy history only to the configured legacy account', () => {
   const records = [{
     created_time: '100',
