@@ -1,13 +1,7 @@
 'use strict';
 
-const AUTOMATED_LOAD_WINDOW_MS = 60 * 1000;
 const AUTOMATED_USER_AGENT_PATTERN =
   /(bot|crawler|spider|scanner|preview|prefetch|googleimageproxy|appleprivacy|mimecast|proofpoint|barracuda|safelinks|urlscan|curl|wget|python|axios|okhttp|headless)/i;
-
-function recordTimestamp(record) {
-  const createdTime = Number(record?.created_time);
-  return Number.isFinite(createdTime) && createdTime > 0 ? createdTime : null;
-}
 
 function uniqueRecords(records) {
   const seen = new Set();
@@ -25,28 +19,18 @@ function uniqueRecords(records) {
   });
 }
 
-function isSuspectedAutomatedOpen(record, sentAt) {
+function isSuspectedAutomatedOpen(record) {
   const fields = record?.fields || {};
-  const userAgent = String(fields['设备环境 (UserAgent)'] || '');
-  if (AUTOMATED_USER_AGENT_PATTERN.test(userAgent)) return true;
-
-  const openedAt = recordTimestamp(record);
-  return sentAt !== null
-    && openedAt !== null
-    && Math.abs(openedAt - sentAt) <= AUTOMATED_LOAD_WINDOW_MS;
+  const userAgent = String(fields['设备环境 (UserAgent)'] || '').trim();
+  return !userAgent || AUTOMATED_USER_AGENT_PATTERN.test(userAgent);
 }
 
 function summarizeEmailOpenEvents(records) {
   const unique = uniqueRecords(records);
-  const sentAt = unique
-    .filter(record => String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送'))
-    .map(recordTimestamp)
-    .filter(timestamp => timestamp !== null)
-    .sort((left, right) => left - right)[0] ?? null;
   const opens = unique
     .filter(record => record?.fields?.['事件类型'] === '邮件跟踪像素加载')
     .sort((left, right) => Number(left.created_time || 0) - Number(right.created_time || 0));
-  const suspectedAutomated = opens.filter(record => isSuspectedAutomatedOpen(record, sentAt));
+  const suspectedAutomated = opens.filter(isSuspectedAutomatedOpen);
   const suspectedSet = new Set(suspectedAutomated);
   const possibleHumanOpens = opens.filter(record => !suspectedSet.has(record));
 

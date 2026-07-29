@@ -71,11 +71,19 @@ test('summarizes tracking pixel loads in chronological order', () => {
   const status = summarizeEmailOpenEvents([
     {
       created_time: '300000',
-      fields: { '事件类型': '邮件跟踪像素加载', '时间': '2026/7/28 23:42:00' }
+      fields: {
+        '事件类型': '邮件跟踪像素加载',
+        '时间': '2026/7/28 23:42:00',
+        '设备环境 (UserAgent)': 'Mozilla/5.0'
+      }
     },
     {
       created_time: '200000',
-      fields: { '事件类型': '邮件跟踪像素加载', '时间': '2026/7/28 23:40:00' }
+      fields: {
+        '事件类型': '邮件跟踪像素加载',
+        '时间': '2026/7/28 23:40:00',
+        '设备环境 (UserAgent)': 'Mozilla/5.0'
+      }
     },
     {
       created_time: '100',
@@ -123,6 +131,31 @@ test('filters an image load that happens seconds after SMTP delivery', () => {
     suspected_automated_count: 1,
     last_suspected_at: '2026/7/29 09:24:12'
   });
+});
+
+test('does not reject an immediate load when it has ordinary client metadata', () => {
+  const sentAt = Date.parse('2026-07-29T09:24:04+08:00');
+  const status = summarizeEmailOpenEvents([
+    {
+      created_time: String(sentAt),
+      fields: {
+        '事件类型': '投稿邮件已发送（跟踪开启）',
+        '时间': '2026/7/29 09:24:04'
+      }
+    },
+    {
+      created_time: String(sentAt + 8 * 1000),
+      fields: {
+        '事件类型': '邮件跟踪像素加载',
+        '时间': '2026/7/29 09:24:12',
+        '设备环境 (UserAgent)': 'Mozilla/5.0'
+      }
+    }
+  ]);
+
+  assert.equal(status.tracking_state, 'possible_human');
+  assert.equal(status.opened, true);
+  assert.equal(status.open_count, 1);
 });
 
 test('filters known image proxies even when they load later', () => {
