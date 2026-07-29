@@ -9,6 +9,7 @@ const {
 
 test('reports no open when the tracking pixel has not loaded', () => {
   assert.deepEqual(summarizeEmailOpenEvents([]), {
+    tracking_state: 'not_loaded',
     opened: false,
     open_count: 0,
     first_opened_at: null,
@@ -83,6 +84,7 @@ test('summarizes tracking pixel loads in chronological order', () => {
   ]);
 
   assert.deepEqual(status, {
+    tracking_state: 'possible_human',
     opened: true,
     open_count: 2,
     first_opened_at: '2026/7/28 23:40:00',
@@ -112,6 +114,7 @@ test('filters an image load that happens seconds after SMTP delivery', () => {
   ]);
 
   assert.deepEqual(status, {
+    tracking_state: 'mail_system_loaded',
     opened: false,
     open_count: 0,
     first_opened_at: null,
@@ -142,6 +145,7 @@ test('filters known image proxies even when they load later', () => {
   ]);
 
   assert.equal(status.opened, false);
+  assert.equal(status.tracking_state, 'mail_system_loaded');
   assert.equal(status.raw_open_count, 1);
   assert.equal(status.suspected_automated_count, 1);
 });
@@ -167,6 +171,7 @@ test('keeps a later ordinary mail-client image load as a possible human open', (
   ]);
 
   assert.equal(status.opened, true);
+  assert.equal(status.tracking_state, 'possible_human');
   assert.equal(status.open_count, 1);
   assert.equal(status.suspected_automated_count, 0);
 });

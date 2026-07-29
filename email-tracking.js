@@ -51,6 +51,11 @@ function summarizeEmailOpenEvents(records) {
   const possibleHumanOpens = opens.filter(record => !suspectedSet.has(record));
 
   return {
+    tracking_state: possibleHumanOpens.length > 0
+      ? 'possible_human'
+      : opens.length > 0
+        ? 'mail_system_loaded'
+        : 'not_loaded',
     opened: possibleHumanOpens.length > 0,
     open_count: possibleHumanOpens.length,
     first_opened_at: possibleHumanOpens[0]?.fields?.['时间'] || null,
