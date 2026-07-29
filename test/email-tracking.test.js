@@ -28,7 +28,11 @@ test('builds a newest-first sent email list without duplicate tracking IDs', () 
         '设备 ID': 'email:first',
         '时间': '2026/7/28 22:00:00',
         '事件类型': '投稿邮件已发送（跟踪开启）',
-        '测算场景': '第一封投稿'
+        '测算场景': '第一封投稿',
+        '设备尺寸': JSON.stringify({
+          recipient_label: '钟山',
+          recipient_email: 'tougao@example.com'
+        })
       }
     },
     {
@@ -54,12 +58,16 @@ test('builds a newest-first sent email list without duplicate tracking IDs', () 
   assert.deepEqual(sent, [
     {
       sent_at: '2026/7/28 23:00:00',
+      recipient_label: '',
+      recipient_email: '',
       email_name: '第二封投稿',
       tracking_enabled: false,
       tracking_id: null
     },
     {
       sent_at: '2026/7/28 22:00:00',
+      recipient_label: '钟山',
+      recipient_email: 'tougao@example.com',
       email_name: '第一封投稿',
       tracking_enabled: true,
       tracking_id: 'first'

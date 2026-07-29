@@ -67,8 +67,16 @@ function summarizeSentEmailEvents(records, limit = 100) {
     seen.add(trackingId);
 
     const trackingEnabled = fields['事件类型'] === '投稿邮件已发送（跟踪开启）';
+    let metadata = {};
+    try {
+      metadata = JSON.parse(String(fields['设备尺寸'] || '{}'));
+    } catch {
+      metadata = {};
+    }
     result.push({
       sent_at: fields['时间'] || null,
+      recipient_label: String(metadata.recipient_label || ''),
+      recipient_email: String(metadata.recipient_email || ''),
       email_name: fields['测算场景'] || '未命名邮件',
       tracking_enabled: trackingEnabled,
       tracking_id: trackingEnabled ? trackingId : null

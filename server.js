@@ -1344,6 +1344,7 @@ app.post('/api/email/send', (req, res) => {
     }
 
     const recipient = String(req.body.recipient || '').trim();
+    const recipientLabel = String(req.body.recipient_label || '').trim();
     const subject = String(req.body.subject || '').trim();
     const body = String(req.body.body || '');
     const submissionName = String(req.body.submission_name || '').trim();
@@ -1356,6 +1357,9 @@ app.post('/api/email/send', (req, res) => {
 
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
       return res.status(400).json({ error: 'Invalid Recipient', message: '请输入有效的收件人邮箱。' });
+    }
+    if (!recipientLabel || recipientLabel.length > 60) {
+      return res.status(400).json({ error: 'Invalid Recipient Label', message: '请输入不超过 60 字的投稿对象，例如“钟山”或“收获”。' });
     }
     if (!subject || subject.length > 200) {
       return res.status(400).json({ error: 'Invalid Subject', message: '请输入不超过 200 字的邮件主题。' });
@@ -1427,7 +1431,10 @@ app.post('/api/email/send', (req, res) => {
           "事件类型": trackingEnabled ? '投稿邮件已发送（跟踪开启）' : '投稿邮件已发送（跟踪关闭）',
           "测算场景": submissionName.slice(0, 100) || subject.slice(0, 100),
           "设备环境 (UserAgent)": '',
-          "设备尺寸": ''
+          "设备尺寸": JSON.stringify({
+            recipient_label: recipientLabel,
+            recipient_email: recipient
+          })
         }
       };
       recentSentEmails.unshift(sentLogRecord);

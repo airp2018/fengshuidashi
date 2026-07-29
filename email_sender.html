@@ -616,6 +616,11 @@
           </div>
 
           <div class="form-row">
+            <label for="recipientLabel">投稿对象</label>
+            <input id="recipientLabel" name="recipient_label" type="text" maxlength="60" required placeholder="例如：钟山、收获">
+          </div>
+
+          <div class="form-row">
             <label for="recipient">收件人</label>
             <input id="recipient" name="recipient" type="email" required placeholder="name@example.com" autocomplete="off">
           </div>
@@ -671,6 +676,8 @@
                 <thead>
                   <tr>
                     <th>发送时间</th>
+                    <th>投稿对象</th>
+                    <th>收件邮箱</th>
                     <th>邮件名称</th>
                     <th>跟踪编号</th>
                     <th>状态</th>
@@ -820,6 +827,8 @@
       items.forEach(item => {
         const row = document.createElement('tr');
         const sentAtCell = document.createElement('td');
+        const recipientLabelCell = document.createElement('td');
+        const recipientEmailCell = document.createElement('td');
         const nameCell = document.createElement('td');
         const trackingCell = document.createElement('td');
         const statusCell = document.createElement('td');
@@ -827,6 +836,8 @@
         const queryButton = document.createElement('button');
 
         sentAtCell.textContent = item.sent_at || '时间未知';
+        recipientLabelCell.textContent = item.recipient_label || '未记录';
+        recipientEmailCell.textContent = item.recipient_email || '未记录';
         nameCell.textContent = item.email_name || '未命名邮件';
         trackingCell.textContent = item.tracking_id || '未启用跟踪';
         trackingCell.className = 'tracking-code';
@@ -842,7 +853,15 @@
         });
 
         actionCell.appendChild(queryButton);
-        row.append(sentAtCell, nameCell, trackingCell, statusCell, actionCell);
+        row.append(
+          sentAtCell,
+          recipientLabelCell,
+          recipientEmailCell,
+          nameCell,
+          trackingCell,
+          statusCell,
+          actionCell
+        );
         sentTableBody.appendChild(row);
       });
 
