@@ -1,15 +1,63 @@
 'use strict';
 
+const AUTOMATED_LOAD_WINDOW_MS = 60 * 1000;
+const AUTOMATED_USER_AGENT_PATTERN =
+  /(bot|crawler|spider|scanner|preview|prefetch|googleimageproxy|appleprivacy|mimecast|proofpoint|barracuda|safelinks|urlscan|curl|wget|python|axios|okhttp|headless)/i;
+
+function recordTimestamp(record) {
+  const createdTime = Number(record?.created_time);
+  return Number.isFinite(createdTime) && createdTime > 0 ? createdTime : null;
+}
+
+function uniqueRecords(records) {
+  const seen = new Set();
+  return (records || []).filter(record => {
+    const fields = record?.fields || {};
+    const signature = [
+      fields['事件类型'] || '',
+      fields['时间'] || '',
+      fields['IP 地址'] || '',
+      fields['设备环境 (UserAgent)'] || ''
+    ].join('\u0000');
+    if (seen.has(signature)) return false;
+    seen.add(signature);
+    return true;
+  });
+}
+
+function isSuspectedAutomatedOpen(record, sentAt) {
+  const fields = record?.fields || {};
+  const userAgent = String(fields['设备环境 (UserAgent)'] || '');
+  if (AUTOMATED_USER_AGENT_PATTERN.test(userAgent)) return true;
+
+  const openedAt = recordTimestamp(record);
+  return sentAt !== null
+    && openedAt !== null
+    && Math.abs(openedAt - sentAt) <= AUTOMATED_LOAD_WINDOW_MS;
+}
+
 function summarizeEmailOpenEvents(records) {
-  const opens = (records || [])
+  const unique = uniqueRecords(records);
+  const sentAt = unique
+    .filter(record => String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送'))
+    .map(recordTimestamp)
+    .filter(timestamp => timestamp !== null)
+    .sort((left, right) => left - right)[0] ?? null;
+  const opens = unique
     .filter(record => record?.fields?.['事件类型'] === '邮件跟踪像素加载')
     .sort((left, right) => Number(left.created_time || 0) - Number(right.created_time || 0));
+  const suspectedAutomated = opens.filter(record => isSuspectedAutomatedOpen(record, sentAt));
+  const suspectedSet = new Set(suspectedAutomated);
+  const possibleHumanOpens = opens.filter(record => !suspectedSet.has(record));
 
   return {
-    opened: opens.length > 0,
-    open_count: opens.length,
-    first_opened_at: opens[0]?.fields?.['时间'] || null,
-    last_opened_at: opens.at(-1)?.fields?.['时间'] || null
+    opened: possibleHumanOpens.length > 0,
+    open_count: possibleHumanOpens.length,
+    first_opened_at: possibleHumanOpens[0]?.fields?.['时间'] || null,
+    last_opened_at: possibleHumanOpens.at(-1)?.fields?.['时间'] || null,
+    raw_open_count: opens.length,
+    suspected_automated_count: suspectedAutomated.length,
+    last_suspected_at: suspectedAutomated.at(-1)?.fields?.['时间'] || null
   };
 }
 

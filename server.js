@@ -1220,27 +1220,40 @@ app.get('/email/open/:trackingId.gif', (req, res) => {
   }
 
   const openedAt = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
-  const currentStatus = emailOpenEvents.get(trackingId) || {
-    opened: true,
-    open_count: 0,
-    first_opened_at: openedAt,
-    last_opened_at: openedAt
-  };
-  currentStatus.open_count += 1;
-  currentStatus.last_opened_at = openedAt;
-  emailOpenEvents.set(trackingId, currentStatus);
-
-  logQueue.push({
+  const clientIp = String(req.headers['x-forwarded-for'] || req.ip || req.socket.remoteAddress || 'unknown')
+    .split(',')[0]
+    .trim()
+    .slice(0, 120);
+  const userAgent = String(req.headers['user-agent'] || '')
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 500);
+  const requestContext = [
+    req.headers.via ? `via=${req.headers.via}` : '',
+    req.headers.referer ? `referer=${req.headers.referer}` : '',
+    req.headers.accept ? `accept=${req.headers.accept}` : ''
+  ]
+    .filter(Boolean)
+    .join('; ')
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 500);
+  const openRecord = {
+    created_time: String(Date.now()),
     fields: {
       "设备 ID": `email:${trackingId}`,
-      "IP 地址": '未记录',
+      "IP 地址": clientIp,
       "时间": openedAt,
       "事件类型": '邮件跟踪像素加载',
       "测算场景": '投稿邮件',
-      "设备环境 (UserAgent)": '',
-      "设备尺寸": ''
+      "设备环境 (UserAgent)": userAgent,
+      "设备尺寸": requestContext
     }
-  });
+  };
+  const liveEvents = emailOpenEvents.get(trackingId) || [];
+  liveEvents.push(openRecord);
+  if (liveEvents.length > 20) liveEvents.shift();
+  emailOpenEvents.set(trackingId, liveEvents);
+
+  logQueue.push({ fields: openRecord.fields });
 
   res.set({
     'Content-Type': 'image/gif',
@@ -1273,17 +1286,20 @@ app.get('/api/email/tracking/:trackingId', async (req, res) => {
   }
 
   try {
-    const persisted = summarizeEmailOpenEvents(
-      await feishu.findEmailTrackingEvents(trackingId)
+    const persistedRecords = await feishu.findEmailTrackingEvents(trackingId);
+    const liveOpenRecords = emailOpenEvents.get(trackingId) || [];
+    const liveSentRecords = recentSentEmails.filter(
+      record => record?.fields?.['设备 ID'] === `email:${trackingId}`
     );
-    const live = emailOpenEvents.get(trackingId);
+    const status = summarizeEmailOpenEvents([
+      ...liveSentRecords,
+      ...liveOpenRecords,
+      ...persistedRecords
+    ]);
 
     return res.json({
       tracking_id: trackingId,
-      opened: Boolean(live?.opened || persisted.opened),
-      open_count: Math.max(live?.open_count || 0, persisted.open_count),
-      first_opened_at: persisted.first_opened_at || live?.first_opened_at || null,
-      last_opened_at: live?.last_opened_at || persisted.last_opened_at || null
+      ...status
     });
   } catch (error) {
     console.error('[Email Tracking Query Error]', error.message);
@@ -1356,6 +1372,7 @@ app.post('/api/email/send', (req, res) => {
     }
 
     const trackingId = crypto.randomUUID().replace(/-/g, '');
+    const trackingCreatedAt = Date.now();
     const pixelUrl = `${getPublicBaseUrl(req)}/email/open/${trackingId}.gif`;
     const escapedBody = escapeEmailHtml(body).replace(/\r?\n/g, '<br>');
     const pixelHtml = trackingEnabled
@@ -1398,11 +1415,11 @@ app.post('/api/email/send', (req, res) => {
       });
 
       const sentLogRecord = {
-        created_time: String(Date.now()),
+        created_time: String(trackingCreatedAt),
         fields: {
           "设备 ID": `email:${trackingId}`,
           "IP 地址": '未记录',
-          "时间": new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          "时间": new Date(trackingCreatedAt).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
           "事件类型": trackingEnabled ? '投稿邮件已发送（跟踪开启）' : '投稿邮件已发送（跟踪关闭）',
           "测算场景": submissionName.slice(0, 100) || subject.slice(0, 100),
           "设备环境 (UserAgent)": '',
