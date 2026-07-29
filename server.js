@@ -1188,6 +1188,43 @@ function createSmtpTransport(smtp) {
   return nodemailer.createTransport(buildSmtpTransportOptions(smtp));
 }
 
+function getSmtpErrorDetails(error) {
+  return {
+    name: error?.name || '',
+    code: error?.code || '',
+    command: error?.command || '',
+    errno: error?.errno || '',
+    syscall: error?.syscall || '',
+    address: error?.address || '',
+    port: error?.port || '',
+    reason: error?.reason || '',
+    message: error?.message || ''
+  };
+}
+
+async function runLegacySmtpDiagnostic() {
+  const smtp = getSmtpConfig();
+  if (!smtp.user || !smtp.pass) {
+    console.log('[SMTP Startup Diagnostic] skipped: legacy SMTP environment is incomplete');
+    return;
+  }
+
+  const transporter = createSmtpTransport(smtp);
+  try {
+    await transporter.verify();
+    console.log('[SMTP Startup Diagnostic] success', {
+      host: smtp.host,
+      port: smtp.port,
+      secure: smtp.secure,
+      user_domain: smtp.user.split('@')[1] || ''
+    });
+  } catch (error) {
+    console.error('[SMTP Startup Diagnostic] failed', getSmtpErrorDetails(error));
+  } finally {
+    if (typeof transporter.close === 'function') transporter.close();
+  }
+}
+
 function getSafeEmailAccount(session) {
   return {
     account_id: session.accountId,
@@ -1383,7 +1420,7 @@ app.post('/api/email/account/login', async (req, res) => {
       current.blockedUntil = now + 15 * 60 * 1000;
     }
     emailAccountLoginFailures.set(clientKey, current);
-    console.error('[Email Account Login Error]', error.code || error.message);
+    console.error('[Email Account Login Error]', getSmtpErrorDetails(error));
     return res.status(401).json({
       error: 'SMTP Authentication Failed',
       message: '邮箱连接失败，请检查邮箱地址、授权码和服务商。'
@@ -1627,15 +1664,7 @@ app.post('/api/email/send', (req, res) => {
         history_saved: historySaved
       });
     } catch (error) {
-      console.error('[Email Send Error]', {
-        code: error.code || '',
-        command: error.command || '',
-        errno: error.errno || '',
-        syscall: error.syscall || '',
-        address: error.address || '',
-        port: error.port || '',
-        message: error.message || ''
-      });
+      console.error('[Email Send Error]', getSmtpErrorDetails(error));
       return res.status(502).json({
         error: 'Email Send Failed',
         message: `邮件发送失败：${error.code || 'SMTP_ERROR'}`
@@ -1691,4 +1720,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  PC 端访问: http://localhost:${PORT}`);
   console.log(`  手机端访问: 请连接热点，访问 http://192.168.137.1:${PORT}`);
   console.log(`======================================================\n`);
+  runLegacySmtpDiagnostic().catch(error => {
+    console.error('[SMTP Startup Diagnostic] unexpected failure', getSmtpErrorDetails(error));
+  });
 });
