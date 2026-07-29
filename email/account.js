@@ -1,5 +1,6 @@
 'use strict';
 
+// SMTP provider and account configuration for the standalone email module.
 const crypto = require('crypto');
 
 const SMTP_PRESETS = Object.freeze({

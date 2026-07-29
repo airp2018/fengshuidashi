@@ -6,7 +6,7 @@ const {
   createEmailAccountId,
   buildSmtpConfig,
   buildSmtpTransportOptions
-} = require('../email-account');
+} = require('../account');
 
 test('creates a stable account id from provider and normalized email', () => {
   assert.equal(

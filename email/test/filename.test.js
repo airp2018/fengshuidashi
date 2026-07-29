@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeUploadFilename } = require('../email-filename');
+const { normalizeUploadFilename } = require('../filename');
 
 test('repairs UTF-8 upload filenames decoded as Latin-1', () => {
   assert.equal(

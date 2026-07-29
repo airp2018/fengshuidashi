@@ -1,5 +1,6 @@
 'use strict';
 
+// Summarize tracking-pixel events without mixing sender accounts.
 const AUTOMATED_USER_AGENT_PATTERN =
   /(bot|crawler|spider|scanner|preview|prefetch|googleimageproxy|appleprivacy|mimecast|proofpoint|barracuda|safelinks|urlscan|curl|wget|python|axios|okhttp|headless)/i;
 

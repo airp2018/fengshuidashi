@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const {
   summarizeEmailOpenEvents,
   summarizeSentEmailEvents
-} = require('../email-tracking');
+} = require('../tracking');
 
 test('reports no open when the tracking pixel has not loaded', () => {
   assert.deepEqual(summarizeEmailOpenEvents([]), {

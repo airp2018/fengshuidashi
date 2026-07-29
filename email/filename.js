@@ -1,5 +1,6 @@
 'use strict';
 
+// Normalize attachment names received through multipart uploads.
 function normalizeUploadFilename(filename) {
   const value = String(filename || '');
 
