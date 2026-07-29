@@ -303,41 +303,34 @@ async function findSentEmailEvents() {
   return [...trackingEnabled, ...trackingDisabled];
 }
 
-async function deleteEmailHistory() {
+function isSentRecordOwnedByAccount(record, accountId, legacyAccountId) {
+  let metadata = {};
+  try {
+    metadata = JSON.parse(String(record?.fields?.['设备尺寸'] || '{}'));
+  } catch {
+    metadata = {};
+  }
+  const recordAccountId = String(metadata.sender_account_id || legacyAccountId || '');
+  return Boolean(accountId) && recordAccountId === accountId;
+}
+
+async function deleteEmailHistory(accountId, legacyAccountId = '') {
   const token = await getTenantToken();
   const tableId = await getOrCreateLogsTable(token);
   const headers = { 'Authorization': `Bearer ${token}` };
-  const eventTypes = [
-    '投稿邮件已发送（跟踪开启）',
-    '投稿邮件已发送（跟踪关闭）',
-    '邮件跟踪像素加载'
-  ];
-  const groups = await Promise.all(eventTypes.map(async eventType => {
-    const res = await requestFeishu({
-      path: `/open-apis/bitable/v1/apps/${APP_TOKEN}/tables/${tableId}/records/search?page_size=500`,
-      method: 'POST',
-      headers
-    }, {
-      filter: {
-        conjunction: 'and',
-        conditions: [
-          {
-            field_name: '事件类型',
-            operator: 'is',
-            value: [eventType]
-          }
-        ]
-      }
-    });
-
-    if (res.code !== 0) {
-      throw new Error(`查询待删除邮件记录失败: ${res.msg}`);
-    }
-    return res.data?.items || [];
-  }));
-  const recordIds = [...new Set(
-    groups.flat().map(record => record.record_id).filter(Boolean)
-  )];
+  const sentRecords = (await findSentEmailEvents())
+    .filter(record => isSentRecordOwnedByAccount(record, accountId, legacyAccountId));
+  const trackingIds = [...new Set(sentRecords.map(record => {
+    const deviceId = String(record?.fields?.['设备 ID'] || '');
+    return deviceId.startsWith('email:') ? deviceId.slice('email:'.length) : '';
+  }).filter(Boolean))];
+  const relatedGroups = await Promise.all(
+    trackingIds.map(trackingId => findEmailTrackingEvents(trackingId))
+  );
+  const recordIds = [...new Set([
+    ...sentRecords,
+    ...relatedGroups.flat()
+  ].map(record => record.record_id).filter(Boolean))];
 
   for (const recordId of recordIds) {
     const res = await requestFeishu({
@@ -350,7 +343,7 @@ async function deleteEmailHistory() {
     }
   }
 
-  return { deleted_count: recordIds.length };
+  return { deleted_count: recordIds.length, tracking_ids: trackingIds };
 }
 
 async function updateClaimStatusInFeishu(clientUuid, status) {

@@ -9,8 +9,13 @@ const feishu = require('./feishu');
 const { normalizeUploadFilename } = require('./email-filename');
 const {
   summarizeEmailOpenEvents,
-  summarizeSentEmailEvents
+  summarizeSentEmailEvents,
+  isSentEmailRecordForAccount
 } = require('./email-tracking');
+const {
+  createEmailAccountId,
+  buildSmtpConfig
+} = require('./email-account');
 
 // Concurrency locks to prevent double-click duplicate entries
 const activeClaims = new Set();
@@ -1147,11 +1152,67 @@ const emailUpload = multer({
   }
 });
 const emailAuthFailures = new Map();
+const emailAccountLoginFailures = new Map();
+const emailAccountSessions = new Map();
+const EMAIL_ACCOUNT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
-function authorizeEmailAdmin(req, res) {
-  const clientKey = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
+function getEmailClientKey(req) {
+  return String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown')
     .split(',')[0]
     .trim();
+}
+
+function getEmailAccountSession(req, res) {
+  const authorization = String(req.headers.authorization || '');
+  const match = authorization.match(/^Bearer\s+([a-f0-9]{64})$/i);
+  const token = match?.[1] || '';
+  const session = token ? emailAccountSessions.get(token) : null;
+
+  if (!session || Date.now() - session.lastSeenAt > EMAIL_ACCOUNT_SESSION_TTL_MS) {
+    if (token) emailAccountSessions.delete(token);
+    res.status(401).json({ error: 'Unauthorized', message: '邮箱登录已失效，请重新输入授权码。' });
+    return null;
+  }
+
+  session.lastSeenAt = Date.now();
+  return session;
+}
+
+function getLegacyEmailAccountId() {
+  const legacyEmail = String(process.env.SMTP_USER || '').trim();
+  return legacyEmail ? createEmailAccountId('163', legacyEmail) : '';
+}
+
+function createSmtpTransport(smtp) {
+  return nodemailer.createTransport({
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    requireTLS: !smtp.secure,
+    auth: {
+      user: smtp.user,
+      pass: smtp.pass
+    },
+    connectionTimeout: 15000,
+    greetingTimeout: 10000,
+    socketTimeout: 30000,
+    disableFileAccess: true,
+    disableUrlAccess: true
+  });
+}
+
+function getSafeEmailAccount(session) {
+  return {
+    account_id: session.accountId,
+    provider: session.smtp.provider,
+    provider_label: session.smtp.provider_label,
+    sender: session.smtp.user,
+    sender_name: session.senderName
+  };
+}
+
+function authorizeEmailAdmin(req, res) {
+  const clientKey = getEmailClientKey(req);
   const now = Date.now();
   const current = emailAuthFailures.get(clientKey) || { count: 0, blockedUntil: 0 };
 
@@ -1283,8 +1344,84 @@ app.get('/api/email/status', (req, res) => {
   });
 });
 
+app.post('/api/email/account/login', async (req, res) => {
+  const clientKey = getEmailClientKey(req);
+  const now = Date.now();
+  const current = emailAccountLoginFailures.get(clientKey) || { count: 0, blockedUntil: 0 };
+  if (current.blockedUntil > now) {
+    return res.status(429).json({
+      error: 'Too Many Attempts',
+      message: '邮箱连接失败次数过多，请 15 分钟后再试。'
+    });
+  }
+
+  let smtp;
+  try {
+    smtp = buildSmtpConfig(req.body);
+  } catch (error) {
+    return res.status(400).json({ error: 'Invalid Email Account', message: error.message });
+  }
+
+  const senderName = String(req.body.sender_name || smtp.user.split('@')[0] || '发件人')
+    .trim()
+    .slice(0, 60);
+  const transporter = createSmtpTransport(smtp);
+  try {
+    await transporter.verify();
+    emailAccountLoginFailures.delete(clientKey);
+    for (const [existingToken, existingSession] of emailAccountSessions) {
+      if (now - existingSession.lastSeenAt > EMAIL_ACCOUNT_SESSION_TTL_MS) {
+        emailAccountSessions.delete(existingToken);
+      }
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const session = {
+      accountId: createEmailAccountId(smtp.provider, smtp.user),
+      smtp,
+      senderName: senderName || '发件人',
+      createdAt: now,
+      lastSeenAt: now
+    };
+    emailAccountSessions.set(token, session);
+    return res.json({
+      success: true,
+      token,
+      ...getSafeEmailAccount(session)
+    });
+  } catch (error) {
+    current.count += 1;
+    if (current.count >= 5) {
+      current.count = 0;
+      current.blockedUntil = now + 15 * 60 * 1000;
+    }
+    emailAccountLoginFailures.set(clientKey, current);
+    console.error('[Email Account Login Error]', error.code || error.message);
+    return res.status(401).json({
+      error: 'SMTP Authentication Failed',
+      message: '邮箱连接失败，请检查邮箱地址、授权码和服务商。'
+    });
+  } finally {
+    if (typeof transporter.close === 'function') transporter.close();
+  }
+});
+
+app.get('/api/email/account/status', (req, res) => {
+  const session = getEmailAccountSession(req, res);
+  if (!session) return;
+  return res.json({ success: true, ...getSafeEmailAccount(session) });
+});
+
+app.post('/api/email/account/logout', (req, res) => {
+  const authorization = String(req.headers.authorization || '');
+  const match = authorization.match(/^Bearer\s+([a-f0-9]{64})$/i);
+  if (match) emailAccountSessions.delete(match[1]);
+  return res.json({ success: true });
+});
+
 app.get('/api/email/tracking/:trackingId', async (req, res) => {
-  if (!authorizeEmailAdmin(req, res)) return;
+  const session = getEmailAccountSession(req, res);
+  if (!session) return;
 
   const trackingId = String(req.params.trackingId || '');
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(trackingId)) {
@@ -1297,10 +1434,27 @@ app.get('/api/email/tracking/:trackingId', async (req, res) => {
     const liveSentRecords = recentSentEmails.filter(
       record => record?.fields?.['设备 ID'] === `email:${trackingId}`
     );
-    const status = summarizeEmailOpenEvents([
+    const allRecords = [
       ...liveSentRecords,
       ...liveOpenRecords,
       ...persistedRecords
+    ];
+    const ownsTrackingId = allRecords.some(record =>
+      String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送')
+      && isSentEmailRecordForAccount(
+        record,
+        session.accountId,
+        getLegacyEmailAccountId()
+      )
+    );
+    if (!ownsTrackingId) {
+      return res.status(404).json({
+        error: 'Tracking Record Not Found',
+        message: '未找到当前邮箱的跟踪记录。'
+      });
+    }
+    const status = summarizeEmailOpenEvents([
+      ...allRecords
     ]);
 
     return res.json({
@@ -1317,12 +1471,16 @@ app.get('/api/email/tracking/:trackingId', async (req, res) => {
 });
 
 app.get('/api/email/sent', async (req, res) => {
-  if (!authorizeEmailAdmin(req, res)) return;
+  const session = getEmailAccountSession(req, res);
+  if (!session) return;
 
   try {
     const persisted = await feishu.findSentEmailEvents();
     return res.json({
-      items: summarizeSentEmailEvents([...recentSentEmails, ...persisted], 100)
+      items: summarizeSentEmailEvents([...recentSentEmails, ...persisted], 100, {
+        account_id: session.accountId,
+        legacy_account_id: getLegacyEmailAccountId()
+      })
     });
   } catch (error) {
     console.error('[Sent Email Query Error]', error.message);
@@ -1334,15 +1492,32 @@ app.get('/api/email/sent', async (req, res) => {
 });
 
 app.delete('/api/email/sent', async (req, res) => {
-  if (!authorizeEmailAdmin(req, res)) return;
+  const session = getEmailAccountSession(req, res);
+  if (!session) return;
 
   try {
-    const result = await feishu.deleteEmailHistory();
-    recentSentEmails.length = 0;
-    emailOpenEvents.clear();
+    const legacyAccountId = getLegacyEmailAccountId();
+    const ownedTrackingIds = new Set(recentSentEmails
+      .filter(record => isSentEmailRecordForAccount(record, session.accountId, legacyAccountId))
+      .map(record => String(record?.fields?.['设备 ID'] || '').replace(/^email:/, ''))
+      .filter(Boolean));
+    const result = await feishu.deleteEmailHistory(session.accountId, legacyAccountId);
+    for (const trackingId of result.tracking_ids || []) ownedTrackingIds.add(trackingId);
+    for (let index = recentSentEmails.length - 1; index >= 0; index -= 1) {
+      if (isSentEmailRecordForAccount(recentSentEmails[index], session.accountId, legacyAccountId)) {
+        recentSentEmails.splice(index, 1);
+      }
+    }
+    for (const trackingId of ownedTrackingIds) emailOpenEvents.delete(trackingId);
     for (let index = logQueue.length - 1; index >= 0; index -= 1) {
       const deviceId = String(logQueue[index]?.fields?.['设备 ID'] || '');
-      if (deviceId.startsWith('email:')) logQueue.splice(index, 1);
+      const trackingId = deviceId.startsWith('email:') ? deviceId.slice('email:'.length) : '';
+      const isOwnedSentRecord = isSentEmailRecordForAccount(
+        logQueue[index],
+        session.accountId,
+        legacyAccountId
+      );
+      if (isOwnedSentRecord || ownedTrackingIds.has(trackingId)) logQueue.splice(index, 1);
     }
     return res.json({ success: true, deleted_count: result.deleted_count });
   } catch (error) {
@@ -1356,7 +1531,8 @@ app.delete('/api/email/sent', async (req, res) => {
 
 // Send a multipart text + HTML email and append an optional invisible tracking pixel.
 app.post('/api/email/send', (req, res) => {
-  if (!authorizeEmailAdmin(req, res)) return;
+  const session = getEmailAccountSession(req, res);
+  if (!session) return;
 
   emailUpload.array('attachments', 5)(req, res, async (uploadError) => {
     if (uploadError) {
@@ -1371,9 +1547,7 @@ app.post('/api/email/send', (req, res) => {
     const subject = String(req.body.subject || '').trim();
     const body = String(req.body.body || '');
     const submissionName = String(req.body.submission_name || '').trim();
-    const senderName = String(process.env.SMTP_SENDER_NAME || req.body.sender_name || '颜桥')
-      .trim()
-      .slice(0, 60);
+    const senderName = session.senderName;
     const trackingEnabled = String(req.body.tracking_enabled || 'true') !== 'false';
     const attachments = req.files || [];
     const totalAttachmentBytes = attachments.reduce((sum, file) => sum + file.size, 0);
@@ -1394,13 +1568,7 @@ app.post('/api/email/send', (req, res) => {
       return res.status(400).json({ error: 'Attachments Too Large', message: '全部附件合计不能超过 20 MB。' });
     }
 
-    const smtp = getSmtpConfig();
-    if (!smtp.user || !smtp.pass) {
-      return res.status(503).json({
-        error: 'SMTP Not Configured',
-        message: '请先在 Render 环境变量中配置 SMTP_USER 和 SMTP_AUTH_CODE。'
-      });
-    }
+    const smtp = session.smtp;
 
     const trackingId = crypto.randomUUID().replace(/-/g, '');
     const trackingCreatedAt = Date.now();
@@ -1416,17 +1584,7 @@ app.post('/api/email/send', (req, res) => {
       '</body></html>'
     ].join('');
 
-    const transporter = nodemailer.createTransport({
-      host: smtp.host,
-      port: smtp.port,
-      secure: smtp.secure,
-      auth: {
-        user: smtp.user,
-        pass: smtp.pass
-      },
-      disableFileAccess: true,
-      disableUrlAccess: true
-    });
+    const transporter = createSmtpTransport(smtp);
 
     try {
       await transporter.sendMail({
@@ -1455,6 +1613,8 @@ app.post('/api/email/send', (req, res) => {
           "测算场景": submissionName.slice(0, 100) || subject.slice(0, 100),
           "设备环境 (UserAgent)": '',
           "设备尺寸": JSON.stringify({
+            sender_account_id: session.accountId,
+            sender_email: smtp.user,
             recipient_label: recipientLabel,
             recipient_email: recipient
           })

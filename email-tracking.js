@@ -50,9 +50,28 @@ function summarizeEmailOpenEvents(records) {
   };
 }
 
-function summarizeSentEmailEvents(records, limit = 100) {
+function getSentEmailMetadata(record) {
+  try {
+    return JSON.parse(String(record?.fields?.['设备尺寸'] || '{}'));
+  } catch {
+    return {};
+  }
+}
+
+function isSentEmailRecordForAccount(record, accountId, legacyAccountId = '') {
+  const eventType = String(record?.fields?.['事件类型'] || '');
+  if (!eventType.startsWith('投稿邮件已发送')) return false;
+  const metadata = getSentEmailMetadata(record);
+  const recordAccountId = String(metadata.sender_account_id || legacyAccountId || '');
+  return Boolean(accountId) && recordAccountId === accountId;
+}
+
+function summarizeSentEmailEvents(records, limit = 100, options = {}) {
+  const accountId = String(options.account_id || '');
+  const legacyAccountId = String(options.legacy_account_id || '');
   const sentRecords = (records || [])
     .filter(record => String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送'))
+    .filter(record => !accountId || isSentEmailRecordForAccount(record, accountId, legacyAccountId))
     .sort((left, right) => Number(right.created_time || 0) - Number(left.created_time || 0));
   const seen = new Set();
   const result = [];
@@ -67,12 +86,7 @@ function summarizeSentEmailEvents(records, limit = 100) {
     seen.add(trackingId);
 
     const trackingEnabled = fields['事件类型'] === '投稿邮件已发送（跟踪开启）';
-    let metadata = {};
-    try {
-      metadata = JSON.parse(String(fields['设备尺寸'] || '{}'));
-    } catch {
-      metadata = {};
-    }
+    const metadata = getSentEmailMetadata(record);
     result.push({
       sent_at: fields['时间'] || null,
       recipient_label: String(metadata.recipient_label || ''),
@@ -90,5 +104,7 @@ function summarizeSentEmailEvents(records, limit = 100) {
 
 module.exports = {
   summarizeEmailOpenEvents,
-  summarizeSentEmailEvents
+  summarizeSentEmailEvents,
+  getSentEmailMetadata,
+  isSentEmailRecordForAccount
 };

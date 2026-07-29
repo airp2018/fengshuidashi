@@ -518,17 +518,42 @@
       color: var(--muted);
     }
 
-    .auth-card input {
+    .auth-card input,
+    .auth-card select {
       width: 100%;
       padding: 11px 12px;
       border: 1px solid #d7dade;
       border-radius: 7px;
+      background: #fff;
       outline: none;
     }
 
-    .auth-card input:focus {
+    .auth-card input:focus,
+    .auth-card select:focus {
       border-color: var(--brand);
       box-shadow: 0 0 0 3px rgba(197, 36, 44, .1);
+    }
+
+    .auth-field {
+      display: grid;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .auth-field label {
+      color: #464a52;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .auth-tip {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      color: #5a5e67;
+      background: #f6f7f9;
+      font-size: 12px;
+      line-height: 1.6;
     }
 
     .auth-actions {
@@ -591,7 +616,7 @@
       </div>
       <div class="account">
         <span id="accountLabel">尚未连接 SMTP</span>
-        <button id="logoutButton" type="button">退出</button>
+        <button id="logoutButton" type="button">切换邮箱</button>
       </div>
     </header>
 
@@ -703,12 +728,35 @@
   <div id="authOverlay" class="auth-overlay">
     <form id="authForm" class="auth-card">
       <div class="auth-icon">✉</div>
-      <h1>进入投稿邮箱</h1>
-      <p>输入风水大师后台现有的管理密码。密码只保存在本次浏览器会话中。</p>
-      <input id="adminPassword" type="password" required autocomplete="current-password" placeholder="管理密码">
+      <h1>添加发件邮箱</h1>
+      <p>第一次使用时连接自己的邮箱，验证成功即可写信。</p>
+      <div class="auth-field">
+        <label for="emailProvider">邮箱服务商</label>
+        <select id="emailProvider" required>
+          <option value="163">163 邮箱</option>
+          <option value="126">126 邮箱</option>
+          <option value="qq">QQ 邮箱</option>
+          <option value="sina">新浪邮箱</option>
+          <option value="gmail">Gmail</option>
+          <option value="outlook">Outlook</option>
+        </select>
+      </div>
+      <div class="auth-field">
+        <label for="senderName">发件人名称</label>
+        <input id="senderName" type="text" maxlength="60" required autocomplete="name" placeholder="例如：颜桥">
+      </div>
+      <div class="auth-field">
+        <label for="senderEmail">发件邮箱</label>
+        <input id="senderEmail" type="email" required autocomplete="username" placeholder="name@163.com">
+      </div>
+      <div class="auth-field">
+        <label for="emailAuthCode">授权码 / 应用专用密码</label>
+        <input id="emailAuthCode" type="password" required autocomplete="current-password" placeholder="不是邮箱登录密码">
+      </div>
+      <div class="auth-tip">授权码只保存在服务器的临时会话内，不写入网页代码和发送历史。退出或服务器重启后需重新输入。</div>
       <div id="authError" class="auth-error"></div>
       <div class="auth-actions">
-        <button class="send-button" type="submit">进入写信</button>
+        <button id="authSubmitButton" class="send-button" type="submit">连接并进入</button>
       </div>
     </form>
   </div>
@@ -718,7 +766,11 @@
     const authForm = document.getElementById('authForm');
     const authOverlay = document.getElementById('authOverlay');
     const authError = document.getElementById('authError');
-    const adminPassword = document.getElementById('adminPassword');
+    const emailProvider = document.getElementById('emailProvider');
+    const senderName = document.getElementById('senderName');
+    const senderEmail = document.getElementById('senderEmail');
+    const emailAuthCode = document.getElementById('emailAuthCode');
+    const authSubmitButton = document.getElementById('authSubmitButton');
     const connectionStatus = document.getElementById('connectionStatus');
     const connectionText = document.getElementById('connectionText');
     const accountLabel = document.getElementById('accountLabel');
@@ -741,13 +793,23 @@
     const sentTableBody = document.getElementById('sentTableBody');
     const sentEmpty = document.getElementById('sentEmpty');
 
-    let sessionPassword = sessionStorage.getItem('emailAdminPassword') || '';
-    let smtpConfigured = false;
-    const trackingStatusCacheKey = 'emailTrackingStatusV1';
+    let sessionToken = sessionStorage.getItem('emailAccountToken') || '';
+    let currentAccount = null;
+    const accountProfileKey = 'emailAccountProfileV1';
+
+    function accountHeaders() {
+      return { Authorization: `Bearer ${sessionToken}` };
+    }
+
+    function trackingStatusCacheKey() {
+      return currentAccount?.account_id
+        ? `emailTrackingStatusV1:${currentAccount.account_id}`
+        : 'emailTrackingStatusV1:anonymous';
+    }
 
     function readTrackingStatusCache() {
       try {
-        return JSON.parse(localStorage.getItem(trackingStatusCacheKey) || '{}');
+        return JSON.parse(localStorage.getItem(trackingStatusCacheKey()) || '{}');
       } catch {
         return {};
       }
@@ -756,7 +818,7 @@
     function saveTrackingStatus(trackingId, status) {
       const cache = readTrackingStatusCache();
       cache[trackingId] = status;
-      localStorage.setItem(trackingStatusCacheKey, JSON.stringify(cache));
+      localStorage.setItem(trackingStatusCacheKey(), JSON.stringify(cache));
     }
 
     function applyTrackingStatus(data, statusCell) {
@@ -823,7 +885,7 @@
 
       try {
         const response = await fetch(`/api/email/tracking/${encodeURIComponent(item.tracking_id)}`, {
-          headers: { Authorization: sessionPassword }
+          headers: accountHeaders()
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -908,7 +970,7 @@
 
       try {
         const response = await fetch('/api/email/sent', {
-          headers: { Authorization: sessionPassword }
+          headers: accountHeaders()
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
@@ -925,7 +987,7 @@
 
     async function clearSentEmails() {
       const confirmed = window.confirm(
-        '确定清空全部发送和跟踪记录吗？此操作不可恢复，但不会撤回已经发出的邮件。'
+        '确定清空当前发件邮箱的全部发送和跟踪记录吗？此操作不可恢复，但不会撤回已经发出的邮件。'
       );
       if (!confirmed) return;
 
@@ -934,13 +996,13 @@
       try {
         const response = await fetch('/api/email/sent', {
           method: 'DELETE',
-          headers: { Authorization: sessionPassword }
+          headers: accountHeaders()
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(data.message || '清空发送记录失败。');
         }
-        localStorage.removeItem(trackingStatusCacheKey);
+        localStorage.removeItem(trackingStatusCacheKey());
         renderSentEmails([]);
         sentEmpty.textContent = `已清空 ${data.deleted_count || 0} 条邮件记录。`;
       } catch (error) {
@@ -960,43 +1022,79 @@
       loadSentEmails();
     }
 
-    async function checkStatus(password) {
-      const response = await fetch('/api/email/status', {
-        headers: { Authorization: password }
+    function applyAccount(account) {
+      currentAccount = account;
+      authOverlay.classList.add('hidden');
+      accountLabel.textContent = `${account.sender_name}（${account.sender}）`;
+      setConnection('ready', `${account.provider_label || '邮箱'}已连接`);
+      hideMessage();
+    }
+
+    async function checkAccountStatus() {
+      const response = await fetch('/api/email/account/status', {
+        headers: accountHeaders()
       });
       const data = await response.json().catch(() => ({}));
 
       if (!response.ok) {
-        throw new Error(data.message || '管理密码错误。');
+        throw new Error(data.message || '邮箱登录已失效。');
       }
 
-      sessionPassword = password;
-      sessionStorage.setItem('emailAdminPassword', password);
-      smtpConfigured = Boolean(data.smtp_configured);
-      authOverlay.classList.add('hidden');
-      accountLabel.textContent = data.sender
-        ? `${data.sender_name || '颜桥'}（${data.sender}）`
-        : 'SMTP 尚未配置';
+      applyAccount(data);
+    }
 
-      if (smtpConfigured) {
-        setConnection('ready', `${data.sender} 已连接`);
-        hideMessage();
-      } else {
-        setConnection('warning', 'SMTP 授权码尚未配置');
-        showMessage('页面已经可用，但发送前还需在 Render 环境变量中配置 SMTP_USER 和 SMTP_AUTH_CODE。', 'warning');
+    function loadSavedProfile() {
+      try {
+        const profile = JSON.parse(localStorage.getItem(accountProfileKey) || '{}');
+        emailProvider.value = profile.provider || '163';
+        senderName.value = profile.sender_name || '颜桥';
+        senderEmail.value = profile.email || '';
+      } catch {
+        emailProvider.value = '163';
+        senderName.value = '颜桥';
       }
+    }
+
+    function saveProfile() {
+      localStorage.setItem(accountProfileKey, JSON.stringify({
+        provider: emailProvider.value,
+        sender_name: senderName.value.trim(),
+        email: senderEmail.value.trim()
+      }));
     }
 
     authForm.addEventListener('submit', async event => {
       event.preventDefault();
       authError.textContent = '';
-      const password = adminPassword.value;
+      authSubmitButton.disabled = true;
+      authSubmitButton.textContent = '正在验证…';
 
       try {
-        await checkStatus(password);
-        adminPassword.value = '';
+        const response = await fetch('/api/email/account/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: emailProvider.value,
+            sender_name: senderName.value.trim(),
+            email: senderEmail.value.trim(),
+            auth_code: emailAuthCode.value
+          })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(data.message || '邮箱连接失败。');
+        }
+
+        sessionToken = data.token;
+        sessionStorage.setItem('emailAccountToken', sessionToken);
+        saveProfile();
+        emailAuthCode.value = '';
+        applyAccount(data);
       } catch (error) {
         authError.textContent = error.message;
+      } finally {
+        authSubmitButton.disabled = false;
+        authSubmitButton.textContent = '连接并进入';
       }
     });
 
@@ -1004,8 +1102,9 @@
       event.preventDefault();
       hideMessage();
 
-      if (!smtpConfigured) {
-        showMessage('SMTP 尚未配置，暂时不能发送。请先添加 163 邮箱授权码。', 'warning');
+      if (!sessionToken || !currentAccount) {
+        showMessage('请先连接发件邮箱。', 'warning');
+        authOverlay.classList.remove('hidden');
         return;
       }
 
@@ -1017,7 +1116,7 @@
       try {
         const response = await fetch('/api/email/send', {
           method: 'POST',
-          headers: { Authorization: sessionPassword },
+          headers: accountHeaders(),
           body: formData
         });
         const data = await response.json().catch(() => ({}));
@@ -1032,7 +1131,7 @@
         const historyText = data.history_saved === false
           ? '\n发送记录暂存于服务器，后台会继续补存。'
           : '\n发送记录已保存到历史列表。';
-        showMessage(`邮件已成功交给 163 SMTP 发送。${trackingText}${historyText}`, 'success');
+        showMessage(`邮件已成功交给 ${currentAccount.provider_label || '邮箱'} SMTP 发送。${trackingText}${historyText}`, 'success');
         emailForm.reset();
         trackingEnabled.checked = true;
         renderFiles();
@@ -1051,11 +1150,20 @@
       hideMessage();
     });
 
-    logoutButton.addEventListener('click', () => {
-      sessionStorage.removeItem('emailAdminPassword');
-      sessionPassword = '';
+    logoutButton.addEventListener('click', async () => {
+      if (sessionToken) {
+        fetch('/api/email/account/logout', {
+          method: 'POST',
+          headers: accountHeaders()
+        }).catch(() => {});
+      }
+      sessionStorage.removeItem('emailAccountToken');
+      sessionToken = '';
+      currentAccount = null;
+      accountLabel.textContent = '尚未连接 SMTP';
+      setConnection('warning', '尚未连接发件邮箱');
       authOverlay.classList.remove('hidden');
-      adminPassword.focus();
+      emailAuthCode.focus();
     });
 
     attachments.addEventListener('change', renderFiles);
@@ -1067,14 +1175,17 @@
     refreshSentButton.addEventListener('click', loadSentEmails);
     clearSentButton.addEventListener('click', clearSentEmails);
 
-    if (sessionPassword) {
-      checkStatus(sessionPassword).catch(() => {
-        sessionStorage.removeItem('emailAdminPassword');
-        sessionPassword = '';
+    loadSavedProfile();
+    if (sessionToken) {
+      checkAccountStatus().catch(() => {
+        sessionStorage.removeItem('emailAccountToken');
+        sessionToken = '';
+        currentAccount = null;
         authOverlay.classList.remove('hidden');
+        emailAuthCode.focus();
       });
     } else {
-      adminPassword.focus();
+      senderEmail.focus();
     }
   </script>
 </body>

@@ -75,6 +75,63 @@ test('builds a newest-first sent email list without duplicate tracking IDs', () 
   ]);
 });
 
+test('keeps sent history isolated by sender account', () => {
+  const records = [
+    {
+      created_time: '100',
+      fields: {
+        '设备 ID': 'email:account-a-message',
+        '时间': '2026/7/29 10:00:00',
+        '事件类型': '投稿邮件已发送（跟踪开启）',
+        '测算场景': 'A 的投稿',
+        '设备尺寸': JSON.stringify({
+          sender_account_id: 'account-a',
+          recipient_email: 'a@example.com'
+        })
+      }
+    },
+    {
+      created_time: '200',
+      fields: {
+        '设备 ID': 'email:account-b-message',
+        '时间': '2026/7/29 11:00:00',
+        '事件类型': '投稿邮件已发送（跟踪开启）',
+        '测算场景': 'B 的投稿',
+        '设备尺寸': JSON.stringify({
+          sender_account_id: 'account-b',
+          recipient_email: 'b@example.com'
+        })
+      }
+    }
+  ];
+
+  const sent = summarizeSentEmailEvents(records, 100, { account_id: 'account-a' });
+
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].email_name, 'A 的投稿');
+  assert.equal(sent[0].recipient_email, 'a@example.com');
+});
+
+test('assigns untagged legacy history only to the configured legacy account', () => {
+  const records = [{
+    created_time: '100',
+    fields: {
+      '设备 ID': 'email:legacy-message',
+      '事件类型': '投稿邮件已发送（跟踪开启）',
+      '测算场景': '旧投稿'
+    }
+  }];
+
+  assert.equal(summarizeSentEmailEvents(records, 100, {
+    account_id: 'legacy-account',
+    legacy_account_id: 'legacy-account'
+  }).length, 1);
+  assert.equal(summarizeSentEmailEvents(records, 100, {
+    account_id: 'other-account',
+    legacy_account_id: 'legacy-account'
+  }).length, 0);
+});
+
 test('summarizes tracking pixel loads in chronological order', () => {
   const status = summarizeEmailOpenEvents([
     {
