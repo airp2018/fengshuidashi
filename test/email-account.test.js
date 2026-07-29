@@ -4,7 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   createEmailAccountId,
-  buildSmtpConfig
+  buildSmtpConfig,
+  buildSmtpTransportOptions
 } = require('../email-account');
 
 test('creates a stable account id from provider and normalized email', () => {
@@ -39,4 +40,21 @@ test('rejects account setup without an authorization code', () => {
     () => buildSmtpConfig({ provider: 'qq', email: 'person@qq.com' }),
     /授权码/
   );
+});
+
+test('uses Nodemailer defaults instead of cutting off slow SMTP delivery', () => {
+  const options = buildSmtpTransportOptions({
+    host: 'smtp.163.com',
+    port: 465,
+    secure: true,
+    user: 'airp@163.com',
+    pass: 'secret'
+  });
+
+  assert.equal(options.host, 'smtp.163.com');
+  assert.equal(options.port, 465);
+  assert.equal(options.secure, true);
+  assert.equal(options.socketTimeout, undefined);
+  assert.equal(options.connectionTimeout, undefined);
+  assert.equal(options.greetingTimeout, undefined);
 });

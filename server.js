@@ -14,7 +14,8 @@ const {
 } = require('./email-tracking');
 const {
   createEmailAccountId,
-  buildSmtpConfig
+  buildSmtpConfig,
+  buildSmtpTransportOptions
 } = require('./email-account');
 
 // Concurrency locks to prevent double-click duplicate entries
@@ -1184,21 +1185,7 @@ function getLegacyEmailAccountId() {
 }
 
 function createSmtpTransport(smtp) {
-  return nodemailer.createTransport({
-    host: smtp.host,
-    port: smtp.port,
-    secure: smtp.secure,
-    requireTLS: !smtp.secure,
-    auth: {
-      user: smtp.user,
-      pass: smtp.pass
-    },
-    connectionTimeout: 15000,
-    greetingTimeout: 10000,
-    socketTimeout: 30000,
-    disableFileAccess: true,
-    disableUrlAccess: true
-  });
+  return nodemailer.createTransport(buildSmtpTransportOptions(smtp));
 }
 
 function getSafeEmailAccount(session) {
@@ -1640,7 +1627,15 @@ app.post('/api/email/send', (req, res) => {
         history_saved: historySaved
       });
     } catch (error) {
-      console.error('[Email Send Error]', error.code || error.message);
+      console.error('[Email Send Error]', {
+        code: error.code || '',
+        command: error.command || '',
+        errno: error.errno || '',
+        syscall: error.syscall || '',
+        address: error.address || '',
+        port: error.port || '',
+        message: error.message || ''
+      });
       return res.status(502).json({
         error: 'Email Send Failed',
         message: `邮件发送失败：${error.code || 'SMTP_ERROR'}`

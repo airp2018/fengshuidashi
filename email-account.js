@@ -51,9 +51,24 @@ function buildSmtpConfig(input) {
   throw new Error('暂不支持该邮箱服务商。');
 }
 
+function buildSmtpTransportOptions(smtp) {
+  return {
+    host: smtp.host,
+    port: smtp.port,
+    secure: smtp.secure,
+    auth: {
+      user: smtp.user,
+      pass: smtp.pass
+    },
+    disableFileAccess: true,
+    disableUrlAccess: true
+  };
+}
+
 module.exports = {
   SMTP_PRESETS,
   normalizeEmail,
   createEmailAccountId,
-  buildSmtpConfig
+  buildSmtpConfig,
+  buildSmtpTransportOptions
 };
