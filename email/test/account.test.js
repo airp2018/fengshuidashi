@@ -42,6 +42,51 @@ test('rejects account setup without an authorization code', () => {
   );
 });
 
+test('builds a safe custom SMTP configuration', () => {
+  assert.deepEqual(buildSmtpConfig({
+    provider: 'custom',
+    email: 'person@yahoo.com',
+    auth_code: 'app-password',
+    custom_host: 'smtp.mail.yahoo.com',
+    custom_port: '465',
+    custom_security: 'ssl'
+  }), {
+    provider: 'custom',
+    provider_label: '自定义 SMTP',
+    host: 'smtp.mail.yahoo.com',
+    port: 465,
+    secure: true,
+    require_tls: false,
+    user: 'person@yahoo.com',
+    pass: 'app-password'
+  });
+});
+
+test('rejects unsafe custom SMTP hosts and ports', () => {
+  assert.throws(
+    () => buildSmtpConfig({
+      provider: 'custom',
+      email: 'person@example.com',
+      auth_code: 'secret',
+      custom_host: '127.0.0.1',
+      custom_port: '465',
+      custom_security: 'ssl'
+    }),
+    /服务器地址/
+  );
+  assert.throws(
+    () => buildSmtpConfig({
+      provider: 'custom',
+      email: 'person@example.com',
+      auth_code: 'secret',
+      custom_host: 'smtp.example.com',
+      custom_port: '25',
+      custom_security: 'starttls'
+    }),
+    /端口/
+  );
+});
+
 test('uses Nodemailer defaults instead of cutting off slow SMTP delivery', () => {
   const options = buildSmtpTransportOptions({
     host: 'smtp.163.com',

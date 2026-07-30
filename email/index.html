@@ -506,6 +506,8 @@
 
     .auth-card {
       width: min(420px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
       padding: 28px;
       border-radius: 12px;
       background: #fff;
@@ -560,6 +562,14 @@
       color: #464a52;
       font-size: 13px;
       font-weight: 600;
+    }
+
+    .custom-smtp-fields {
+      margin-top: 12px;
+      padding: 2px 14px 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f7f8fa;
     }
 
     .auth-tip {
@@ -760,7 +770,25 @@
           <option value="sina">新浪邮箱</option>
           <option value="gmail">Gmail</option>
           <option value="outlook">Outlook</option>
+          <option value="custom">其他邮箱（自定义 SMTP）</option>
         </select>
+      </div>
+      <div id="customSmtpFields" class="custom-smtp-fields hidden">
+        <div class="auth-field">
+          <label for="customSmtpHost">SMTP 服务器</label>
+          <input id="customSmtpHost" type="text" maxlength="253" autocomplete="off" placeholder="例如：smtp.mail.yahoo.com">
+        </div>
+        <div class="auth-field">
+          <label for="customSmtpPort">SMTP 端口</label>
+          <input id="customSmtpPort" type="number" min="1" max="65535" inputmode="numeric" value="465">
+        </div>
+        <div class="auth-field">
+          <label for="customSmtpSecurity">加密方式</label>
+          <select id="customSmtpSecurity">
+            <option value="ssl">SSL/TLS（通常为 465 或 994）</option>
+            <option value="starttls">STARTTLS（通常为 587）</option>
+          </select>
+        </div>
       </div>
       <div class="auth-field">
         <label for="senderName">发件人名称</label>
@@ -788,6 +816,10 @@
     const authOverlay = document.getElementById('authOverlay');
     const authError = document.getElementById('authError');
     const emailProvider = document.getElementById('emailProvider');
+    const customSmtpFields = document.getElementById('customSmtpFields');
+    const customSmtpHost = document.getElementById('customSmtpHost');
+    const customSmtpPort = document.getElementById('customSmtpPort');
+    const customSmtpSecurity = document.getElementById('customSmtpSecurity');
     const senderName = document.getElementById('senderName');
     const senderEmail = document.getElementById('senderEmail');
     const emailAuthCode = document.getElementById('emailAuthCode');
@@ -1081,23 +1113,38 @@
       applyAccount(data);
     }
 
+    function updateCustomSmtpFields() {
+      const isCustom = emailProvider.value === 'custom';
+      customSmtpFields.classList.toggle('hidden', !isCustom);
+      customSmtpHost.required = isCustom;
+      customSmtpPort.required = isCustom;
+      customSmtpSecurity.required = isCustom;
+    }
+
     function loadSavedProfile() {
       try {
         const profile = JSON.parse(localStorage.getItem(accountProfileKey) || '{}');
         emailProvider.value = profile.provider || '163';
         senderName.value = profile.sender_name || '颜桥';
         senderEmail.value = profile.email || '';
+        customSmtpHost.value = profile.custom_host || '';
+        customSmtpPort.value = profile.custom_port || '465';
+        customSmtpSecurity.value = profile.custom_security || 'ssl';
       } catch {
         emailProvider.value = '163';
         senderName.value = '颜桥';
       }
+      updateCustomSmtpFields();
     }
 
     function saveProfile() {
       localStorage.setItem(accountProfileKey, JSON.stringify({
         provider: emailProvider.value,
         sender_name: senderName.value.trim(),
-        email: senderEmail.value.trim()
+        email: senderEmail.value.trim(),
+        custom_host: customSmtpHost.value.trim(),
+        custom_port: customSmtpPort.value,
+        custom_security: customSmtpSecurity.value
       }));
     }
 
@@ -1115,7 +1162,10 @@
             provider: emailProvider.value,
             sender_name: senderName.value.trim(),
             email: senderEmail.value.trim(),
-            auth_code: emailAuthCode.value
+            auth_code: emailAuthCode.value,
+            custom_host: customSmtpHost.value.trim(),
+            custom_port: customSmtpPort.value,
+            custom_security: customSmtpSecurity.value
           })
         });
         const data = await response.json().catch(() => ({}));
@@ -1205,6 +1255,14 @@
     });
 
     attachments.addEventListener('change', renderFiles);
+    emailProvider.addEventListener('change', updateCustomSmtpFields);
+    customSmtpSecurity.addEventListener('change', () => {
+      if (customSmtpSecurity.value === 'starttls' && ['465', '994'].includes(customSmtpPort.value)) {
+        customSmtpPort.value = '587';
+      } else if (customSmtpSecurity.value === 'ssl' && customSmtpPort.value === '587') {
+        customSmtpPort.value = '465';
+      }
+    });
     composeButton.addEventListener('click', showComposeView);
     composeNav.addEventListener('click', showComposeView);
     sentNav.addEventListener('click', showSentView);
