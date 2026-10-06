@@ -13,7 +13,7 @@ function uniqueRecords(records) {
       fields['时间'] || '',
       fields['IP 地址'] || '',
       fields['设备环境 (UserAgent)'] || ''
-    ].join('\u0000');
+    ].map(readBitableText).join('\u0000');
     if (seen.has(signature)) return false;
     seen.add(signature);
     return true;
@@ -22,14 +22,14 @@ function uniqueRecords(records) {
 
 function isSuspectedAutomatedOpen(record) {
   const fields = record?.fields || {};
-  const userAgent = String(fields['设备环境 (UserAgent)'] || '').trim();
+  const userAgent = readBitableText(fields['设备环境 (UserAgent)']).trim();
   return !userAgent || AUTOMATED_USER_AGENT_PATTERN.test(userAgent);
 }
 
 function summarizeEmailOpenEvents(records) {
   const unique = uniqueRecords(records);
   const opens = unique
-    .filter(record => record?.fields?.['事件类型'] === '邮件跟踪像素加载')
+    .filter(record => readBitableText(record?.fields?.['事件类型']) === '邮件跟踪像素加载')
     .sort((left, right) => Number(left.created_time || 0) - Number(right.created_time || 0));
   const suspectedAutomated = opens.filter(isSuspectedAutomatedOpen);
   const suspectedSet = new Set(suspectedAutomated);
@@ -43,11 +43,11 @@ function summarizeEmailOpenEvents(records) {
         : 'not_loaded',
     opened: possibleHumanOpens.length > 0,
     open_count: possibleHumanOpens.length,
-    first_opened_at: possibleHumanOpens[0]?.fields?.['时间'] || null,
-    last_opened_at: possibleHumanOpens.at(-1)?.fields?.['时间'] || null,
+    first_opened_at: readBitableText(possibleHumanOpens[0]?.fields?.['时间']) || null,
+    last_opened_at: readBitableText(possibleHumanOpens.at(-1)?.fields?.['时间']) || null,
     raw_open_count: opens.length,
     suspected_automated_count: suspectedAutomated.length,
-    last_suspected_at: suspectedAutomated.at(-1)?.fields?.['时间'] || null
+    last_suspected_at: readBitableText(suspectedAutomated.at(-1)?.fields?.['时间']) || null
   };
 }
 
@@ -115,6 +115,7 @@ function summarizeSentEmailEvents(records, limit = 100, options = {}) {
 }
 
 module.exports = {
+  readBitableText,
   summarizeEmailOpenEvents,
   summarizeSentEmailEvents,
   getSentEmailMetadata,

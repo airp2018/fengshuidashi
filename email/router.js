@@ -8,6 +8,7 @@ const nodemailer = require('nodemailer');
 const { normalizeUploadFilename } = require('./filename');
 const { formatEmailBody } = require('./body');
 const {
+  readBitableText,
   summarizeEmailOpenEvents,
   summarizeSentEmailEvents,
   isSentEmailRecordForAccount
@@ -303,7 +304,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
       const persistedRecords = await feishu.findEmailTrackingEvents(trackingId);
       const liveOpenRecords = emailOpenEvents.get(trackingId) || [];
       const liveSentRecords = recentSentEmails.filter(
-        record => record?.fields?.['设备 ID'] === `email:${trackingId}`
+        record => readBitableText(record?.fields?.['设备 ID']) === `email:${trackingId}`
       );
       const allRecords = [
         ...liveSentRecords,
@@ -311,8 +312,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
         ...persistedRecords
       ];
       const ownsTrackingId = allRecords.some(record =>
-        String(record?.fields?.['事件类型'] || '').startsWith('投稿邮件已发送')
-        && isSentEmailRecordForAccount(
+        isSentEmailRecordForAccount(
           record,
           session.accountId,
           getLegacyEmailAccountId()
