@@ -833,6 +833,7 @@
     const backComposeButton = document.getElementById('backComposeButton');
     const logoutButton = document.getElementById('logoutButton');
     const attachments = document.getElementById('attachments');
+    let selectedAttachments = [];
     const fileList = document.getElementById('fileList');
     const message = document.getElementById('message');
     const trackingEnabled = document.getElementById('trackingEnabled');
@@ -921,11 +922,40 @@
 
     function renderFiles() {
       fileList.replaceChildren();
-      Array.from(attachments.files).forEach(file => {
+      selectedAttachments.forEach((file, index) => {
         const row = document.createElement('div');
         row.textContent = `${file.name} · ${formatBytes(file.size)}`;
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.textContent = '移除';
+        removeButton.setAttribute('aria-label', `移除附件 ${file.name}`);
+        removeButton.addEventListener('click', () => {
+          selectedAttachments.splice(index, 1);
+          renderFiles();
+        });
+        row.appendChild(removeButton);
         fileList.appendChild(row);
       });
+    }
+
+    function addAttachments() {
+      const nextFiles = [...selectedAttachments, ...Array.from(attachments.files)];
+      attachments.value = '';
+      if (nextFiles.length > 5) {
+        showMessage('最多添加 5 个附件，请先移除不需要的附件。', 'warning');
+        return;
+      }
+      if (nextFiles.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) {
+        showMessage('全部附件合计不能超过 20 MB。', 'warning');
+        return;
+      }
+      selectedAttachments = nextFiles;
+      renderFiles();
+    }
+
+    function appendAttachments(formData) {
+      formData.delete('attachments');
+      selectedAttachments.forEach(file => formData.append('attachments', file, file.name));
     }
 
     function showComposeView() {
@@ -1197,6 +1227,7 @@
       }
 
       const formData = new FormData(emailForm);
+      appendAttachments(formData);
       formData.set('tracking_enabled', trackingEnabled.checked ? 'true' : 'false');
       sendButton.disabled = true;
       sendButton.textContent = '发送中…';
@@ -1221,6 +1252,7 @@
           : '\n发送记录已保存到历史列表。';
         showMessage(`邮件已成功交给 ${currentAccount.provider_label || '邮箱'} SMTP 发送。${trackingText}${historyText}`, 'success');
         emailForm.reset();
+        selectedAttachments = [];
         trackingEnabled.checked = true;
         renderFiles();
       } catch (error) {
@@ -1233,6 +1265,7 @@
 
     clearButton.addEventListener('click', () => {
       emailForm.reset();
+      selectedAttachments = [];
       trackingEnabled.checked = true;
       renderFiles();
       hideMessage();
@@ -1254,7 +1287,7 @@
       emailAuthCode.focus();
     });
 
-    attachments.addEventListener('change', renderFiles);
+    attachments.addEventListener('change', addAttachments);
     emailProvider.addEventListener('change', updateCustomSmtpFields);
     customSmtpSecurity.addEventListener('change', () => {
       if (customSmtpSecurity.value === 'starttls' && ['465', '994'].includes(customSmtpPort.value)) {
