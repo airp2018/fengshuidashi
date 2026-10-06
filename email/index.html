@@ -818,7 +818,8 @@
         <label for="emailAuthCode">授权码 / 应用专用密码</label>
         <input id="emailAuthCode" type="password" required autocomplete="current-password" placeholder="不是邮箱登录密码">
       </div>
-      <div class="auth-tip">授权码只保存在服务器的临时会话内，不写入网页代码和发送历史。退出或服务器重启后需重新输入。</div>
+      <label class="tracking-option"><input id="rememberEmail" type="checkbox" checked>记住此邮箱 30 天（公共电脑请取消勾选）</label>
+      <div class="auth-tip">登录信息加密保存在此浏览器，服务器重启后可自动恢复。授权码不以明文写入浏览器存储或发送历史；切换邮箱会清除此浏览器的登录。</div>
       <div id="authError" class="auth-error"></div>
       <div class="auth-actions">
         <button id="authSubmitButton" class="send-button" type="submit">连接并进入</button>
@@ -918,6 +919,18 @@
 
     function accountHeaders() {
       return { Authorization: `Bearer ${sessionToken}` };
+    }
+
+    async function accountFetch(url, options = {}) {
+      const response = await fetch(url, options);
+      if (response.status === 401) {
+        sessionStorage.removeItem('emailAccountToken');
+        sessionToken = '';
+        currentAccount = null;
+        setConnection('warning', '请重新连接发件邮箱');
+        authOverlay.classList.remove('hidden');
+      }
+      return response;
     }
 
     function trackingStatusCacheKey() {
@@ -1032,7 +1045,7 @@
       statusCell.className = 'sent-status';
 
       try {
-        const response = await fetch(`/api/email/tracking/${encodeURIComponent(item.tracking_id)}`, {
+        const response = await accountFetch(`/api/email/tracking/${encodeURIComponent(item.tracking_id)}`, {
           headers: accountHeaders()
         });
         const data = await response.json().catch(() => ({}));
@@ -1127,7 +1140,7 @@
       sentEmpty.textContent = '正在读取已发送邮件…';
 
       try {
-        const response = await fetch('/api/email/sent', {
+        const response = await accountFetch('/api/email/sent', {
           headers: accountHeaders()
         });
         const data = await response.json().catch(() => ({}));
@@ -1152,7 +1165,7 @@
       clearSentButton.disabled = true;
       clearSentButton.textContent = '清空中…';
       try {
-        const response = await fetch('/api/email/sent', {
+        const response = await accountFetch('/api/email/sent', {
           method: 'DELETE',
           headers: accountHeaders()
         });
@@ -1189,7 +1202,7 @@
     }
 
     async function checkAccountStatus() {
-      const response = await fetch('/api/email/account/status', {
+      const response = await accountFetch('/api/email/account/status', {
         headers: accountHeaders()
       });
       const data = await response.json().catch(() => ({}));
@@ -1251,6 +1264,7 @@
             sender_name: senderName.value.trim(),
             email: senderEmail.value.trim(),
             auth_code: emailAuthCode.value,
+            remember: document.getElementById('rememberEmail').checked,
             custom_host: customSmtpHost.value.trim(),
             custom_port: customSmtpPort.value,
             custom_security: customSmtpSecurity.value
@@ -1266,6 +1280,9 @@
         saveProfile();
         emailAuthCode.value = '';
         applyAccount(data);
+        if (document.getElementById('rememberEmail').checked && !data.remember_supported) {
+          showMessage('服务器尚未配置登录加密密钥，本次登录仅在服务器运行期间有效。', 'warning');
+        }
       } catch (error) {
         authError.textContent = error.message;
       } finally {
@@ -1298,7 +1315,7 @@
       sendButton.textContent = '发送中…';
 
       try {
-        const response = await fetch('/api/email/send', {
+        const response = await accountFetch('/api/email/send', {
           method: 'POST',
           headers: accountHeaders(),
           body: formData
@@ -1341,8 +1358,8 @@
     });
 
     logoutButton.addEventListener('click', async () => {
-      if (sessionToken) {
-        fetch('/api/email/account/logout', {
+      if (sessionToken || currentAccount) {
+        await fetch('/api/email/account/logout', {
           method: 'POST',
           headers: accountHeaders()
         }).catch(() => {});
@@ -1380,17 +1397,12 @@
     });
 
     loadSavedProfile();
-    if (sessionToken) {
-      checkAccountStatus().catch(() => {
-        sessionStorage.removeItem('emailAccountToken');
-        sessionToken = '';
-        currentAccount = null;
-        authOverlay.classList.remove('hidden');
-        emailAuthCode.focus();
-      });
-    } else {
+    checkAccountStatus().catch(error => {
+      currentAccount = null;
+      authOverlay.classList.remove('hidden');
+      authError.textContent = sessionToken ? error.message : '';
       senderEmail.focus();
-    }
+    });
   </script>
 </body>
 </html>

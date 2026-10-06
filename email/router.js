@@ -7,6 +7,7 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const { normalizeUploadFilename } = require('./filename');
 const { formatEmailBody } = require('./body');
+const { SESSION_COOKIE, SESSION_TTL_MS, REMEMBER_TTL_MS, createSessionCodec, readSessionCookie, sessionCookieOptions } = require('./session');
 const {
   readBitableText,
   summarizeEmailOpenEvents,
@@ -23,9 +24,9 @@ const TRANSPARENT_GIF = Buffer.from(
   'R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7',
   'base64'
 );
-const EMAIL_ACCOUNT_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const EMAIL_ACCOUNT_SESSION_TTL_MS = SESSION_TTL_MS;
 
-function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
+function createEmailRouter({ feishu, getAdminPassword, logQueue, sessionSecret = process.env.EMAIL_SESSION_SECRET || process.env.FEISHU_APP_SECRET }) {
   if (!feishu || typeof getAdminPassword !== 'function' || !Array.isArray(logQueue)) {
     throw new Error('Email router dependencies are incomplete.');
   }
@@ -36,6 +37,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
   const emailAuthFailures = new Map();
   const emailAccountLoginFailures = new Map();
   const emailAccountSessions = new Map();
+  const sessionCodec = createSessionCodec(sessionSecret);
   const emailUpload = multer({
     storage: multer.memoryStorage(),
     limits: {
@@ -54,9 +56,14 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
     const authorization = String(req.headers.authorization || '');
     const match = authorization.match(/^Bearer\s+([a-f0-9]{64})$/i);
     const token = match?.[1] || '';
-    const session = token ? emailAccountSessions.get(token) : null;
+    let session = token ? emailAccountSessions.get(token) : null;
+    if (session && (Date.now() - session.lastSeenAt > EMAIL_ACCOUNT_SESSION_TTL_MS || session.expiresAt <= Date.now())) {
+      emailAccountSessions.delete(token);
+      session = null;
+    }
+    if (!session && sessionCodec) session = sessionCodec.open(readSessionCookie(req));
 
-    if (!session || Date.now() - session.lastSeenAt > EMAIL_ACCOUNT_SESSION_TTL_MS) {
+    if (!session) {
       if (token) emailAccountSessions.delete(token);
       res.status(401).json({ error: 'Unauthorized', message: '邮箱登录已失效，请重新输入授权码。' });
       return null;
@@ -147,6 +154,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
   }
 
   router.get('/email/send', (req, res) => {
+    res.set('X-Email-Session-Persistence', sessionCodec ? 'enabled' : 'disabled');
     res.sendFile(path.join(__dirname, 'index.html'));
   });
 
@@ -237,6 +245,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
     const senderName = String(req.body.sender_name || smtp.user.split('@')[0] || '发件人')
       .trim()
       .slice(0, 60);
+    const remember = req.body.remember === true && Boolean(sessionCodec);
     const transporter = createSmtpTransport(smtp);
     try {
       await transporter.verify();
@@ -249,16 +258,25 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
 
       const token = crypto.randomBytes(32).toString('hex');
       const session = {
+        sessionId: token,
         accountId: createEmailAccountId(smtp.provider, smtp.user),
         smtp,
         senderName: senderName || '发件人',
         createdAt: now,
-        lastSeenAt: now
+        lastSeenAt: now,
+        expiresAt: now + (remember ? REMEMBER_TTL_MS : SESSION_TTL_MS)
       };
+      if (sessionCodec) {
+        const options = sessionCookieOptions(req);
+        if (remember) options.maxAge = REMEMBER_TTL_MS;
+        res.cookie(SESSION_COOKIE, sessionCodec.seal(session), options);
+      }
       emailAccountSessions.set(token, session);
       return res.json({
         success: true,
         token,
+        remembered: remember,
+        remember_supported: Boolean(sessionCodec),
         ...getSafeEmailAccount(session)
       });
     } catch (error) {
@@ -288,6 +306,9 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
     const authorization = String(req.headers.authorization || '');
     const match = authorization.match(/^Bearer\s+([a-f0-9]{64})$/i);
     if (match) emailAccountSessions.delete(match[1]);
+    const cookieSession = sessionCodec?.open(readSessionCookie(req));
+    if (cookieSession?.sessionId) emailAccountSessions.delete(cookieSession.sessionId);
+    res.clearCookie(SESSION_COOKIE, sessionCookieOptions(req));
     return res.json({ success: true });
   });
 
