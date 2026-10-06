@@ -331,7 +331,7 @@
       color: #555c64;
     }
 
-    textarea {
+    textarea, .body-editor {
       width: 100%;
       min-height: 320px;
       resize: vertical;
@@ -344,7 +344,13 @@
       line-height: 1.75;
     }
 
-    textarea:focus,
+    .body-editor { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .body-editor:empty::before { content: attr(data-placeholder); color: #8a9099; pointer-events: none; }
+    .format-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+    .format-toolbar button, .format-toolbar select { padding: 6px 10px; border: 1px solid #dfe2e6; border-radius: 5px; background: #fff; color: #24272b; }
+    .format-toolbar label { display: flex; align-items: center; gap: 6px; }
+    .format-hint { color: #777; font-size: 12px; }
+    textarea:focus, .body-editor:focus,
     .form-row:focus-within {
       border-color: #d7a1a4;
       box-shadow: inset 3px 0 0 var(--brand);
@@ -637,7 +643,7 @@
         <div class="brand-mark">✉</div>
         <div>
           <div class="brand-title">投稿邮箱</div>
-          <div class="brand-subtitle">普通正文 · 附件 · 打开跟踪</div>
+          <div class="brand-subtitle">格式正文 · 附件 · 打开跟踪</div>
         </div>
       </div>
       <div class="account">
@@ -700,7 +706,17 @@
 
           <div class="body-wrap">
             <div class="body-label">正文</div>
-            <textarea id="body" name="body" required placeholder="这里直接粘贴或输入普通 TXT 正文，不需要写 HTML。"></textarea>
+            <div class="format-toolbar" role="toolbar" aria-label="正文格式">
+              <button id="boldButton" type="button" title="加粗（Ctrl+B）"><strong>加粗</strong></button>
+              <label>字号 <select id="fontSize" aria-label="正文文字字号">
+                <option value="12">12px</option><option value="14" selected>14px</option>
+                <option value="16">16px</option><option value="18">18px</option>
+                <option value="20">20px</option><option value="24">24px</option><option value="28">28px</option>
+              </select></label>
+              <button id="clearFormatButton" type="button">清除格式</button>
+              <span class="format-hint">选中文字设置格式；粘贴时按纯文本插入</span>
+            </div>
+            <div id="body" class="body-editor" contenteditable="true" role="textbox" aria-label="邮件正文" aria-multiline="true" data-placeholder="在这里输入或粘贴正文，可设置加粗和字号。"></div>
           </div>
 
           <div class="options">
@@ -812,6 +828,48 @@
 
   <script>
     const emailForm = document.getElementById('emailForm');
+    const bodyEditor = document.getElementById('body');
+    const fontSize = document.getElementById('fontSize');
+    let bodySelection = null;
+
+    document.addEventListener('selectionchange', () => {
+      const selection = window.getSelection();
+      if (selection.rangeCount && bodyEditor.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+        bodySelection = selection.getRangeAt(0).cloneRange();
+      }
+    });
+
+    function normalizeBodyFontSize() {
+      bodyEditor.querySelectorAll('font[size="7"]').forEach(font => {
+        font.style.fontSize = `${fontSize.value}px`;
+        font.removeAttribute('size');
+      });
+    }
+
+    function formatBody(command, value = null) {
+      bodyEditor.focus();
+      if (bodySelection && bodyEditor.contains(bodySelection.commonAncestorContainer)) {
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(bodySelection);
+      }
+      document.execCommand(command, false, value);
+      if (command === 'fontSize') normalizeBodyFontSize();
+      const selection = window.getSelection();
+      if (selection.rangeCount) bodySelection = selection.getRangeAt(0).cloneRange();
+    }
+
+    for (const [id, command] of [['boldButton', 'bold'], ['clearFormatButton', 'removeFormat']]) {
+      const button = document.getElementById(id);
+      button.addEventListener('mousedown', event => event.preventDefault());
+      button.addEventListener('click', () => formatBody(command));
+    }
+    fontSize.addEventListener('change', () => formatBody('fontSize', '7'));
+    bodyEditor.addEventListener('input', normalizeBodyFontSize);
+    bodyEditor.addEventListener('paste', event => {
+      event.preventDefault();
+      document.execCommand('insertText', false, event.clipboardData.getData('text/plain'));
+    });
     const authForm = document.getElementById('authForm');
     const authOverlay = document.getElementById('authOverlay');
     const authError = document.getElementById('authError');
@@ -1227,6 +1285,13 @@
       }
 
       const formData = new FormData(emailForm);
+      if (!bodyEditor.innerText.trim()) {
+        showMessage('邮件正文不能为空。', 'warning');
+        bodyEditor.focus();
+        return;
+      }
+      formData.set('body', bodyEditor.innerText);
+      formData.set('body_html', bodyEditor.innerHTML);
       appendAttachments(formData);
       formData.set('tracking_enabled', trackingEnabled.checked ? 'true' : 'false');
       sendButton.disabled = true;
@@ -1252,6 +1317,8 @@
           : '\n发送记录已保存到历史列表。';
         showMessage(`邮件已成功交给 ${currentAccount.provider_label || '邮箱'} SMTP 发送。${trackingText}${historyText}`, 'success');
         emailForm.reset();
+        bodyEditor.replaceChildren();
+        bodySelection = null;
         selectedAttachments = [];
         trackingEnabled.checked = true;
         renderFiles();
@@ -1265,6 +1332,8 @@
 
     clearButton.addEventListener('click', () => {
       emailForm.reset();
+      bodyEditor.replaceChildren();
+      bodySelection = null;
       selectedAttachments = [];
       trackingEnabled.checked = true;
       renderFiles();

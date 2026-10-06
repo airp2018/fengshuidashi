@@ -6,6 +6,7 @@ const express = require('express');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
 const { normalizeUploadFilename } = require('./filename');
+const { formatEmailBody } = require('./body');
 const {
   summarizeEmailOpenEvents,
   summarizeSentEmailEvents,
@@ -137,15 +138,6 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
       user: process.env.SMTP_USER || '',
       pass: process.env.SMTP_AUTH_CODE || process.env.SMTP_PASS || ''
     };
-  }
-
-  function escapeEmailHtml(value) {
-    return String(value)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
   }
 
   function getPublicBaseUrl(req) {
@@ -454,13 +446,13 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
       const trackingId = crypto.randomUUID().replace(/-/g, '');
       const trackingCreatedAt = Date.now();
       const pixelUrl = `${getPublicBaseUrl(req)}/email/open/${trackingId}.gif`;
-      const escapedBody = escapeEmailHtml(body).replace(/\r?\n/g, '<br>');
+      const formattedBody = formatEmailBody(body, req.body.body_html || '');
       const pixelHtml = trackingEnabled
         ? `<img src="${pixelUrl}" width="1" height="1" alt="" style="width:1px;height:1px;border:0;">`
         : '';
       const html = [
         '<!doctype html><html><body>',
-        `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#222;">${escapedBody}</div>`,
+        `<div style="font-family:Arial,'Microsoft YaHei',sans-serif;font-size:14px;line-height:1.7;color:#222;white-space:pre-wrap;">${formattedBody.html}</div>`,
         pixelHtml,
         '</body></html>'
       ].join('');
@@ -475,7 +467,7 @@ function createEmailRouter({ feishu, getAdminPassword, logQueue }) {
           },
           to: recipient,
           subject,
-          text: body,
+          text: formattedBody.text,
           html,
           attachments: attachments.map(file => ({
             filename: normalizeUploadFilename(file.originalname),
